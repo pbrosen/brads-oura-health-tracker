@@ -1,0 +1,21 @@
+{
+  "name": "brad-health-oura",
+  "owner": {
+    "name": "Brad Rosen",
+    "email": "pbrosen@gmail.com"
+  },
+  "metadata": {
+    "description": "Brad's Health Tracker, Oura build — log food, exercise, and digestion to local files, with a visual dashboard fed by an Oura ring.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "health-tracker-oura",
+      "source": "./health-tracker-oura",
+      "description": "Daily food, exercise, and digestion (gut-symptom) tracker that saves to plain local Markdown files, with a visual dashboard and Oura ring activity synced nightly.",
+      "version": "0.1.0",
+      "author": { "name": "Brad Rosen" },
+      "keywords": ["health", "nutrition", "food-log", "digestion", "oura", "fitness"]
+    }
+  ]
+}

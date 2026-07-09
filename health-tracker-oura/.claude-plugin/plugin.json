@@ -1,0 +1,9 @@
+{
+  "name": "health-tracker-oura",
+  "version": "0.1.0",
+  "description": "Daily health tracker — log food, exercise, and digestive (gut) symptoms by chatting with Claude, with a visual dashboard. Everything is saved as plain local Markdown files in a folder you choose. Pulls in Oura ring activity (active calories, steps, high-activity minutes, readiness) via a nightly scheduled task.",
+  "author": {
+    "name": "Brad Rosen"
+  },
+  "keywords": ["health", "nutrition", "food-log", "digestion", "oura", "fitness"]
+}
