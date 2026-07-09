@@ -1,0 +1,2011 @@
+<!doctype html><script type="application/json" id="cowork-artifact-meta">
+{
+  "name": "Health Tracker",
+  "schemaVersion": 1,
+  "description": "Daily food + exercise + gut-symptom tracker with net-calorie headline, macro breakdown, activity minutes synced from your Oura ring, food↔symptom correlation, and a 7-day net-calorie chart. Saves to plain Markdown files in your local HealthTracker folder via the Filesystem desktop extension you install. NOTE: the setup skill rewrites these tool names + FS_PREFIX below to match your installed Filesystem connector.",
+  "mcpTools": [
+    "mcp__filesystem__read_text_file",
+    "mcp__filesystem__write_file",
+    "mcp__filesystem__list_directory",
+    "mcp__filesystem__read_multiple_files",
+    "mcp__filesystem__create_directory",
+    "mcp__filesystem__list_allowed_directories"
+  ],
+  "mcpServerNames": [
+    "filesystem",
+    "filesystem",
+    "filesystem",
+    "filesystem",
+    "filesystem",
+    "filesystem"
+  ]
+}
+</script>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Health Tracker</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 20px; background: #fafaf9; color: #1c1917; }
+.container { max-width: 940px; margin: 0 auto; }
+.hero { background: #fff; border: 1px solid #e7e5e4; border-radius: 12px; padding: 24px; margin-bottom: 14px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+.hero .label { margin: 6px 0 4px 0; font-size: 12px; color: #78716c; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.datenav { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 8px; }
+.datebtn { background: #fff; border: 1px solid #d6d3d1; color: #44403c; padding: 5px 10px; border-radius: 6px; font: inherit; font-size: 13px; cursor: pointer; line-height: 1; }
+.datebtn:hover { background: #f5f5f4; border-color: #a8a29e; }
+.datebtn.today { font-size: 12px; padding: 5px 12px; }
+.dateinput { padding: 5px 8px; border: 1px solid #d6d3d1; border-radius: 6px; font: inherit; font-size: 13px; background: #fff; min-width: 0; }
+.dateinput:focus { outline: none; border-color: #78716c; }
+.hero .big { font-size: 56px; font-weight: 700; margin: 4px 0; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.hero .big.deficit { color: #15803d; }
+.hero .big.surplus { color: #b91c1c; }
+.hero .big.neutral { color: #57534e; }
+.hero .sub { color: #57534e; font-size: 14px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.card { background: #fff; border: 1px solid #e7e5e4; border-radius: 12px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+.card.full { margin-bottom: 14px; }
+.card h2 { margin: 0 0 12px 0; font-size: 12px; color: #78716c; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+.macro { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #f5f5f4; font-size: 14px; }
+.macro:last-child { border: none; }
+.macro .lbl { color: #57534e; }
+.macro .val { font-weight: 600; font-variant-numeric: tabular-nums; }
+.macro .breakdown { color: #a8a29e; font-weight: 400; font-size: 12px; margin-left: 6px; }
+form.entry { display: grid; gap: 8px; align-items: center; margin-bottom: 4px; }
+form.food { grid-template-columns: 88px 1fr 76px 76px 76px 76px auto; }
+form.ex { grid-template-columns: 88px 1fr 90px 80px 80px auto; }
+form.entry input { padding: 7px 9px; border: 1px solid #d6d3d1; border-radius: 6px; font: inherit; min-width: 0; background: #fff; }
+form.entry input:focus { outline: none; border-color: #78716c; }
+form.entry button.add { padding: 7px 16px; background: #1c1917; color: #fff; border: none; border-radius: 6px; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
+form.entry button.add:hover:not(:disabled) { background: #44403c; }
+form.entry button.add:disabled { background: #a8a29e; cursor: not-allowed; }
+.hint { font-size: 12px; color: #a8a29e; margin: 4px 2px 0; }
+.log { margin-top: 12px; }
+.log-item { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid #f5f5f4; font-size: 13px; gap: 8px; }
+.log-item:last-child { border: none; }
+.log-item.pending { opacity: 0.6; }
+.log-item .time { color: #a8a29e; width: 50px; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.log-item .name { flex: 1; min-width: 0; }
+.log-item .name .note { color: #a8a29e; font-size: 12px; margin-left: 4px; }
+.log-item .stats { color: #57534e; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.log-item .actions { display: flex; gap: 2px; flex-shrink: 0; }
+.log-item button.icon { background: none; border: none; color: #a8a29e; cursor: pointer; font-size: 14px; padding: 4px 7px; border-radius: 4px; line-height: 1; }
+.log-item button.icon:hover { color: #1c1917; background: #f5f5f4; }
+.log-item button.icon.x:hover { color: #b91c1c; background: #fef2f2; }
+.log-item.oura { background: linear-gradient(90deg, transparent 0, #f0fdfa 50%, transparent 100%); margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+.log-item.oura .name::before { content: "💍"; color: #0d9488; margin-right: 6px; font-size: 11px; }
+.log-item.editing { background: #fef3c7; padding: 10px; border-radius: 6px; flex-wrap: wrap; }
+.log-item.editing input { padding: 6px 8px; border: 1px solid #d6d3d1; border-radius: 5px; font: inherit; min-width: 0; }
+.log-item.editing input.time { width: 80px; }
+.log-item.editing input.name { flex: 1; min-width: 140px; }
+.log-item.editing input.num { width: 70px; }
+.log-item.editing button { padding: 6px 12px; border-radius: 5px; font: inherit; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
+.log-item.editing button.save { background: #1c1917; color: #fff; }
+.log-item.editing button.cancel { background: #fff; color: #57534e; border-color: #d6d3d1; }
+.empty { text-align: center; color: #a8a29e; padding: 14px; font-size: 13px; font-style: italic; }
+.subhead { font-size: 11px; color: #a8a29e; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; padding: 10px 0 4px; border-bottom: 1px solid #f5f5f4; margin-bottom: 4px; }
+.chart-card { padding: 16px; }
+.chart-card h2 { align-items: baseline; }
+.week-net { font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; color: #57534e; }
+.week-net.pos { color: #15803d; }
+.week-net.neg { color: #b91c1c; }
+.week-net .sub2 { color: #a8a29e; font-weight: 400; margin-left: 6px; }
+.chart-box { position: relative; height: 220px; }
+.toast { position: fixed; top: 16px; right: 16px; background: #1c1917; color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 10; max-width: 320px; }
+.toast.show { opacity: 1; }
+.toast.err { background: #b91c1c; }
+.footer { color: #a8a29e; font-size: 11px; text-align: center; padding: 14px; }
+.footer a { color: #78716c; cursor: pointer; text-decoration: underline; }
+.byline { position: fixed; bottom: 14px; right: 14px; z-index: 20; background: rgba(255,255,255,0.85); backdrop-filter: blur(4px); border: 1px solid #e7e5e4; border-radius: 999px; padding: 5px 12px; font-size: 11px; color: #78716c; box-shadow: 0 1px 4px rgba(0,0,0,0.06); pointer-events: none; }
+.spinner { display: inline-block; width: 11px; height: 11px; border: 2px solid #d6d3d1; border-top-color: #57534e; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: -1px; margin-left: 5px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.saving { color: #a8a29e; font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.mini-btn { background: #fff; border: 1px solid #d6d3d1; color: #44403c; padding: 3px 8px; border-radius: 5px; font: inherit; font-size: 11px; font-weight: 500; text-transform: none; letter-spacing: 0; cursor: pointer; margin-left: 8px; }
+.mini-btn:hover:not(:disabled) { background: #f5f5f4; border-color: #a8a29e; }
+.mini-btn:disabled { color: #a8a29e; cursor: not-allowed; }
+details.settings { background: #fff; border: 1px solid #e7e5e4; border-radius: 12px; padding: 0; margin-bottom: 14px; }
+details.settings summary { padding: 12px 16px; cursor: pointer; font-size: 12px; color: #78716c; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+details.settings summary:hover { color: #1c1917; }
+details.settings[open] summary { border-bottom: 1px solid #f5f5f4; }
+.settings-body { padding: 14px 16px; display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 12px; align-items: end; }
+.settings-body label { font-size: 12px; color: #78716c; display: block; margin-bottom: 4px; }
+.settings-body input { width: 100%; padding: 7px 9px; border: 1px solid #d6d3d1; border-radius: 6px; font: inherit; }
+.settings-body button { padding: 8px 16px; background: #1c1917; color: #fff; border: none; border-radius: 6px; font: inherit; font-weight: 600; cursor: pointer; }
+.settings-note { grid-column: 1 / -1; font-size: 12px; color: #a8a29e; line-height: 1.5; }
+.neat-tag { font-size: 11px; color: #a8a29e; font-weight: 400; margin-left: 6px; white-space: nowrap; }
+.neat-tag button.icon { font-size: 11px; padding: 1px 4px; vertical-align: baseline; }
+.neat-tag input { width: 60px; padding: 2px 5px; border: 1px solid #d6d3d1; border-radius: 4px; font: inherit; font-size: 11px; }
+.neat-tag button.nb { padding: 2px 6px; border-radius: 4px; font: inherit; font-size: 10px; font-weight: 600; cursor: pointer; border: none; margin-left: 3px; }
+.neat-tag button.nb.ok { background: #1c1917; color: #fff; }
+.neat-tag button.nb.cc { background: #fff; color: #57534e; border: 1px solid #d6d3d1; }
+form.sym { grid-template-columns: 120px 82px 116px 104px 78px 1fr auto; }
+form.entry select { padding: 7px 9px; border: 1px solid #d6d3d1; border-radius: 6px; font: inherit; background: #fff; min-width: 0; }
+form.entry select:focus { outline: none; border-color: #78716c; }
+.sev { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: capitalize; }
+.sev.mild { background: #fef9c3; color: #854d0e; }
+.sev.moderate { background: #ffedd5; color: #9a3412; }
+.sev.severe { background: #fee2e2; color: #991b1b; }
+.corr-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0 12px; }
+.corr-controls input { width: 56px; padding: 6px 8px; border: 1px solid #d6d3d1; border-radius: 6px; font: inherit; }
+.corr-controls .clbl { font-size: 12px; color: #78716c; }
+.corr-msg { background: #f5f5f4; border: 1px solid #e7e5e4; border-radius: 8px; padding: 12px 14px; font-size: 13px; color: #57534e; line-height: 1.5; }
+.corr-summary { font-size: 12px; color: #78716c; margin-bottom: 8px; line-height: 1.5; }
+.corr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.corr-table th, .corr-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #f5f5f4; }
+.corr-table th { color: #78716c; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.corr-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.corr-table tr.suspect td { background: #fef2f2; }
+.corr-table tr.suspect td:first-child { font-weight: 600; color: #991b1b; }
+.corr-bar { display: inline-block; height: 8px; background: #ef4444; border-radius: 4px; vertical-align: middle; min-width: 2px; }
+@media (max-width: 720px) {
+  .row { grid-template-columns: 1fr; }
+  form.food, form.ex, form.sym { grid-template-columns: 1fr 1fr; }
+  form.food input[name="name"], form.ex input[name="name"], form.sym input[name="note"] { grid-column: 1 / -1; }
+  form.entry button.add { grid-column: 1 / -1; }
+}
+/* ---- onboarding wizard ---- */
+.onboard-overlay { position: fixed; inset: 0; background: rgba(28,25,23,0.55); backdrop-filter: blur(3px); z-index: 50; display: none; align-items: center; justify-content: center; padding: 20px; }
+.onboard-overlay.show { display: flex; }
+.onboard-card { background: #fff; border: 1px solid #e7e5e4; border-radius: 16px; padding: 26px; max-width: 460px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,0.18); max-height: 92vh; overflow-y: auto; }
+.onboard-card h2 { margin: 0 0 4px 0; font-size: 20px; font-weight: 700; color: #1c1917; text-transform: none; letter-spacing: 0; display: block; }
+.onboard-card .lead { color: #57534e; font-size: 13px; margin: 0 0 18px 0; line-height: 1.5; }
+.onboard-field { margin-bottom: 16px; }
+.onboard-field > label { display: block; font-size: 12px; font-weight: 600; color: #44403c; margin-bottom: 6px; }
+.onboard-field .sub { font-weight: 400; color: #a8a29e; }
+.onboard-row { display: flex; gap: 8px; }
+.onboard-card input[type=number] { width: 100%; padding: 9px 10px; border: 1px solid #d6d3d1; border-radius: 8px; font: inherit; }
+.onboard-card input:focus { outline: none; border-color: #78716c; }
+.act-opts { display: grid; gap: 8px; }
+.act-opt { display: flex; align-items: flex-start; gap: 10px; border: 1px solid #d6d3d1; border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+.act-opt:hover { border-color: #a8a29e; background: #fafaf9; }
+.act-opt.sel { border-color: #1c1917; background: #f5f5f4; }
+.act-opt input { margin-top: 3px; flex-shrink: 0; }
+.act-opt .t { font-size: 13px; font-weight: 600; color: #1c1917; }
+.act-opt .d { font-size: 12px; color: #78716c; }
+.onboard-exact { margin-top: 8px; display: none; }
+.onboard-exact.show { display: block; }
+.onboard-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 22px; }
+.onboard-actions .skip { background: none; border: none; color: #a8a29e; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; }
+.onboard-actions .start { padding: 10px 22px; background: #1c1917; color: #fff; border: none; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; }
+.onboard-actions .start:hover { background: #44403c; }
+.onboard-err { color: #b91c1c; font-size: 12px; margin-top: 10px; min-height: 14px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="hero">
+    <div class="datenav">
+      <button class="datebtn" id="date-prev" title="Previous day">‹</button>
+      <input type="date" id="date-input" class="dateinput">
+      <button class="datebtn" id="date-next" title="Next day">›</button>
+      <button class="datebtn today" id="date-today" title="Jump to today">Today</button>
+    </div>
+    <div class="label" id="hero-date">Loading…</div>
+    <div class="big neutral" id="net">—</div>
+    <div class="sub" id="net-sub">&nbsp;</div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h2>Intake today</h2>
+      <div class="macro"><span class="lbl">Calories</span><span class="val" id="cal-in">—</span></div>
+      <div class="macro"><span class="lbl">Protein</span><span class="val" id="protein">—</span></div>
+      <div class="macro"><span class="lbl">Carbs</span><span class="val" id="carbs">—</span></div>
+      <div class="macro"><span class="lbl">Fat</span><span class="val" id="fat">—</span></div>
+    </div>
+    <div class="card">
+      <h2>Burned today</h2>
+      <div class="macro"><span class="lbl">Total</span><span class="val"><span id="cal-out">—</span></span></div>
+      <div class="macro"><span class="lbl">— Resting + NEAT (so far today) <span class="neat-tag" id="neat-tag"></span></span><span class="val" id="cal-rest">—</span></div>
+      <div class="macro"><span class="lbl">— Active</span><span class="val"><span id="cal-active">—</span><span class="breakdown" id="cal-out-bd"></span></span></div>
+      <div class="macro"><span class="lbl">VO₂max zone min · today</span><span class="val"><span id="vo2-today">—</span><span class="breakdown" id="vo2-today-bd"></span></span></div>
+      <div class="macro"><span class="lbl">VO₂max zone min · this week</span><span class="val" id="vo2-week">—</span></div>
+      <div class="macro"><span class="lbl">VO₂max zone min · 7d avg/day</span><span class="val" id="vo2-avg">—</span></div>
+    </div>
+  </div>
+
+  <div class="card full">
+    <h2>Add food <span id="food-saving" class="saving"></span></h2>
+    <form class="entry food" id="food-form">
+      <input name="time" type="time" required title="Time">
+      <input name="name" placeholder="What did you eat? (e.g. 'turkey sandwich and chips')" required>
+      <input name="cal" type="number" min="0" placeholder="cal">
+      <input name="p" type="number" min="0" step="0.1" placeholder="protein g">
+      <input name="c" type="number" min="0" step="0.1" placeholder="carbs g">
+      <input name="f" type="number" min="0" step="0.1" placeholder="fat g">
+      <button type="submit" class="add" id="food-add-btn">Add</button>
+    </form>
+    <div class="hint">Leave macro fields blank and Claude will estimate them. Click any entry to edit.</div>
+    <div class="log" id="food-log"></div>
+  </div>
+
+  <div class="card full">
+    <h2>Exercise today <button id="oura-import-btn" class="mini-btn" title="Trigger your Oura import task now and poll for new data">↻ Import Oura</button> <span id="ex-saving" class="saving"></span></h2>
+    <form class="entry ex" id="ex-form">
+      <input name="time" type="time" required title="Time">
+      <input name="name" placeholder="Manual entry (e.g. weight training)" required>
+      <input name="cal" type="number" min="0" placeholder="cal burned" required>
+      <input name="vo2" type="number" min="0" placeholder="VO₂ min" value="0">
+      <input name="dur" type="number" min="0" placeholder="duration min">
+      <button type="submit" class="add" id="ex-add-btn">Add</button>
+    </form>
+    <div class="hint">Log anything by hand here (weights, yoga, etc.). Your Oura ring's daily activity syncs automatically every night — to pull a fresh number mid-day, ask Claude in chat to "run my Oura import now."</div>
+    <div class="log" id="oura-log"></div>
+    <div class="log" id="ex-log"></div>
+  </div>
+
+  <div class="card full">
+    <h2>Gut symptoms <span id="sym-saving" class="saving"></span></h2>
+    <form class="entry sym" id="sym-form">
+      <input name="date" type="date" required title="Date">
+      <input name="time" type="time" required title="Time">
+      <select name="type" title="Type">
+        <option value="diarrhea">Diarrhea</option>
+        <option value="loose">Loose stool</option>
+        <option value="constipation">Constipation</option>
+        <option value="gas">Gas / bloating</option>
+        <option value="other">Other</option>
+      </select>
+      <select name="severity" title="Severity">
+        <option value="mild">Mild</option>
+        <option value="moderate" selected>Moderate</option>
+        <option value="severe">Severe</option>
+      </select>
+      <input name="bristol" type="number" min="0" max="7" placeholder="Bristol" title="Bristol Stool Scale 1–7 (6–7 = diarrhea); leave blank if n/a">
+      <input name="note" placeholder="Notes (suspected trigger, cramps, etc.)">
+      <button type="submit" class="add" id="sym-add-btn">Log</button>
+    </form>
+    <div class="hint">Log an episode whenever it happens. Bristol scale: 1–2 hard · 3–4 normal · 5 soft · 6–7 diarrhea.</div>
+    <div class="log" id="symptom-log"></div>
+    <div style="margin-top:16px; padding-top:14px; border-top:1px solid #f5f5f4;">
+      <div class="corr-controls">
+        <button id="corr-btn" class="mini-btn" style="font-size:13px; padding:6px 14px; margin-left:0;">🔎 Find food correlations</button>
+        <span class="clbl">Look at foods eaten</span>
+        <input id="corr-min" type="number" min="0" max="72" value="6" title="window start, hours before episode">
+        <span class="clbl">–</span>
+        <input id="corr-max" type="number" min="1" max="120" value="48" title="window end, hours before episode">
+        <span class="clbl">hours before each episode</span>
+      </div>
+      <div id="corr-panel"></div>
+    </div>
+  </div>
+
+  <div class="card chart-card full">
+    <h2>Past 7 days — net calories per day <span id="week-net" class="week-net">—</span></h2>
+    <div class="chart-box"><canvas id="week-chart"></canvas></div>
+  </div>
+
+  <details class="settings" id="diag-panel">
+    <summary>🔧 Load diagnostic (open if numbers look wrong)</summary>
+    <div style="padding: 14px 16px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #44403c; white-space: pre-wrap; word-break: break-all; line-height: 1.5;" id="diag-content">Loading…</div>
+  </details>
+
+  <details class="settings" id="settings">
+    <summary>⚙ Calorie-burn settings</summary>
+    <div class="settings-body">
+      <div>
+        <label for="set-weight">Weight (kg)</label>
+        <input type="number" id="set-weight" min="30" max="200" step="0.5">
+      </div>
+      <div>
+        <label for="set-height">Height (cm)</label>
+        <input type="number" id="set-height" min="100" max="230" step="1">
+      </div>
+      <div>
+        <label for="set-age">Age</label>
+        <input type="number" id="set-age" min="10" max="120" step="1">
+      </div>
+      <div>
+        <label for="set-neat">Default NEAT (kcal/day)</label>
+        <input type="number" id="set-neat" min="0" max="1000" step="10">
+      </div>
+      <button id="set-save">Save & recalc</button>
+      <div class="settings-note">
+        Resting calories use Mifflin–St Jeor BMR + NEAT (non-exercise activity thermogenesis — walking, stairs, errands), prorated to the current time of day (male formula). BMR and NEAT are stored per day, so historical values don't shift when you change a setting. The default NEAT above applies to new days; click the ✎ next to "NEAT" in the burn card to adjust a specific day. Active calories come from manual entries and from your Oura ring's daily active-calorie total, synced automatically every night (or on demand — ask Claude to "run my Oura import now"). "VO₂ min" for Oura days reflects Oura's own high-activity-time metric, not a lab VO2max measurement.
+      </div>
+    </div>
+  </details>
+
+  <div class="footer">
+    Data is saved as plain Markdown files (and one JSON file per day for Oura) in your local Health Tracker folder · <code>food-log/YYYY-MM-DD.md</code> · <code>food-log/_library.md</code> · <code>symptom-log.md</code> · <code>oura/YYYY-MM-DD.json</code>. Resting burn uses the Mifflin–St Jeor BMR formula.
+  </div>
+</div>
+
+<div class="onboard-overlay" id="onboard">
+  <div class="onboard-card">
+    <h2>Welcome to your Health Tracker 👋</h2>
+    <p class="lead">A couple of quick numbers so your "calories burned" is accurate. You can change these anytime under Calorie-burn settings.</p>
+    <div class="onboard-field">
+      <label>Weight <span class="sub">(lb)</span></label>
+      <input type="number" id="ob-weight" min="60" max="600" step="1" placeholder="e.g. 175">
+    </div>
+    <div class="onboard-field">
+      <label>Height</label>
+      <div class="onboard-row">
+        <input type="number" id="ob-ft" min="3" max="8" step="1" placeholder="ft">
+        <input type="number" id="ob-in" min="0" max="11" step="1" placeholder="in">
+      </div>
+    </div>
+    <div class="onboard-field">
+      <label>Age <span class="sub">(years)</span></label>
+      <input type="number" id="ob-age" min="13" max="100" step="1" placeholder="e.g. 42">
+    </div>
+    <div class="onboard-field">
+      <label>Outside of workouts, how active is your typical day?</label>
+      <div class="act-opts" id="ob-acts">
+        <label class="act-opt"><input type="radio" name="ob-act" value="250"><span><span class="t">Mostly sitting</span><br><span class="d">Desk job, not much walking — ~250 cal/day</span></span></label>
+        <label class="act-opt sel"><input type="radio" name="ob-act" value="400" checked><span><span class="t">Moderately active</span><br><span class="d">Some walking and standing — ~400 cal/day</span></span></label>
+        <label class="act-opt"><input type="radio" name="ob-act" value="550"><span><span class="t">On my feet most of the day</span><br><span class="d">Lots of walking/standing — ~550 cal/day</span></span></label>
+        <label class="act-opt"><input type="radio" name="ob-act" value="700"><span><span class="t">Very active / physical job</span><br><span class="d">Manual labor, always moving — ~700 cal/day</span></span></label>
+        <label class="act-opt"><input type="radio" name="ob-act" value="custom"><span><span class="t">Enter an exact number</span><br><span class="d">If you already know your non-exercise burn</span></span></label>
+      </div>
+      <div class="onboard-exact" id="ob-exact-wrap">
+        <input type="number" id="ob-neat" min="0" max="1000" step="10" placeholder="Daily non-exercise burn (kcal)">
+      </div>
+    </div>
+    <div class="onboard-err" id="ob-err"></div>
+    <div class="onboard-actions">
+      <button class="skip" id="ob-skip">Skip for now</button>
+      <button class="start" id="ob-save">Start tracking</button>
+    </div>
+  </div>
+</div>
+
+<div class="byline">Created by Brad Rosen</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<script>
+// ---- Local-file connector (the Filesystem desktop extension you installed) ----
+// FS_PREFIX must match how your installed Filesystem connector namespaces its tools. The
+// setup skill sets this for you when it creates the dashboard (based on the actual connected
+// tool names). The default below assumes the connector is registered as "filesystem".
+// If reads/writes fail, this single line is the thing to fix.
+const FS_PREFIX = "mcp__filesystem__";
+const GET_TOOL = FS_PREFIX + "read_text_file";
+const PUT_TOOL = FS_PREFIX + "write_file";
+const LIST_TOOL = FS_PREFIX + "list_directory";
+const BATCH_TOOL = FS_PREFIX + "read_multiple_files";
+const MKDIR_TOOL = FS_PREFIX + "create_directory";
+const ALLOWED_TOOL = FS_PREFIX + "list_allowed_directories";
+
+// Paths are absolute, rooted at the folder the Filesystem connector is allowed to use
+// (discovered at startup). Filled in by setPaths()/discoverBase() before any I/O.
+let BASE = "";
+let VAULT_DIR = "", OURA_DIR = "", LIBRARY_PATH = "", SYMPTOM_PATH = "";
+function setPaths(base) {
+  BASE = String(base || "").replace(/\/+$/, "");
+  VAULT_DIR = BASE + "/food-log";
+  OURA_DIR = BASE + "/oura";
+  LIBRARY_PATH = VAULT_DIR + "/_library.md";
+  SYMPTOM_PATH = BASE + "/symptom-log.md";
+}
+const DATA_DIR_KEY = "health-tracker-dir";
+async function discoverBase() {
+  // 1) explicit, remembered override
+  try { const saved = localStorage.getItem(DATA_DIR_KEY); if (saved) { setPaths(saved); return; } } catch (e) {}
+  // 2) ask the connector which folder it can write to
+  try {
+    const res = await window.cowork.callMcpTool(ALLOWED_TOOL, {});
+    const txt = String(unwrapMcp(res) || "");
+    const m = txt.match(/(?:^|\n)\s*(\/[^\n"]+)/) || txt.match(/[A-Za-z]:\\[^\n"]+/);
+    if (m) { const p = (m[1] || m[0]).trim(); setPaths(p); try { localStorage.setItem(DATA_DIR_KEY, p); } catch (e) {} return; }
+  } catch (e) { console.error("[health-tracker] discoverBase failed:", e); }
+  // 3) last resort — leaves BASE empty; init() warns the user
+  setPaths("");
+}
+async function ensureDirs() {
+  for (const p of [VAULT_DIR, OURA_DIR]) {
+    try { await window.cowork.callMcpTool(MKDIR_TOOL, { path: p }); } catch (e) {}
+  }
+}
+const DATA_OPEN = "<!--DATA";
+const DATA_CLOSE = "-->";
+
+// Parse a filesystem list_directory result ("[FILE] name" / "[DIR] name" lines) into names.
+function parseDirListing(u) {
+  if (Array.isArray(u)) return u;
+  if (typeof u !== "string") return [];
+  const s = u.trim();
+  if (!s) return [];
+  // tolerate a JSON array, just in case the bridge returns one
+  if (s[0] === "[" && s.indexOf("\n") === -1) { try { const a = JSON.parse(s); if (Array.isArray(a)) return a; } catch (e) {} }
+  return s.split("\n").map(l => l.replace(/^\s*\[(?:FILE|DIR)\]\s*/i, "").trim()).filter(Boolean);
+}
+
+// ---------- utilities ----------
+function localDateStr(d) {
+  d = d || new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function nowHM() { return new Date().toTimeString().substring(0, 5); }
+function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+}
+function toast(msg, isErr) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast show" + (isErr ? " err" : "");
+  setTimeout(() => t.classList.remove("show"), 2400);
+}
+// Peel as many layers of MCP-bridge wrapping as we can. The bridge has been seen returning:
+//   raw string                                               "---\ntitle..."
+//   JSON-encoded string                                      "\"---\\ntitle...\""
+//   MCP content envelope                                     {content: [{type:"text",text:"---..."}]}
+//   plain {content: "..."} or {text: "..."}                  {content: "---..."}
+//   JSON-stringified envelope                                "{\"content\":[{\"text\":\"---...\"}]}"
+//   array directly                                           [{type:"text",text:"---..."}]
+// Loop, peeling one layer at a time, until we have a plain text string (markdown / JSON list / etc.)
+function unwrapMcp(res) {
+  if (res == null) return "";
+  let cur = res;
+  for (let depth = 0; depth < 6; depth++) {
+    if (typeof cur === "string") {
+      const trimmed = cur.trim();
+      // Plain markdown content → done
+      if (trimmed.startsWith("---") || trimmed.startsWith("#") || trimmed.startsWith("<")) return cur;
+      // Try peeling one JSON layer (string-wrapped string, or stringified object/array)
+      if (trimmed.startsWith("\"") || trimmed.startsWith("{") || trimmed.startsWith("[")) {
+        try { cur = JSON.parse(trimmed); continue; } catch (e) { return cur; }
+      }
+      return cur;
+    }
+    if (Array.isArray(cur)) {
+      if (cur.length === 0) return "";
+      // MCP content envelope: peel the first text part
+      if (cur[0] && typeof cur[0] === "object" && typeof cur[0].text === "string") { cur = cur[0].text; continue; }
+      // Otherwise it's actual list data (e.g. directory listing). Serialize for the caller to JSON.parse.
+      return JSON.stringify(cur);
+    }
+    if (typeof cur === "object") {
+      if (typeof cur.content === "string") { cur = cur.content; continue; }
+      if (typeof cur.text === "string") { cur = cur.text; continue; }
+      if (Array.isArray(cur.content)) { cur = cur.content; continue; }
+      if (cur.result !== undefined) { cur = cur.result; continue; }
+      if (cur.data !== undefined) { cur = cur.data; continue; }
+      if (cur.body !== undefined) { cur = cur.body; continue; }
+      return JSON.stringify(cur);
+    }
+    return String(cur);
+  }
+  return typeof cur === "string" ? cur : JSON.stringify(cur);
+}
+
+// ---------- settings ----------
+const SETTINGS_KEY = "health-tracker-settings-v1";
+const ONBOARD_KEY = "health-tracker-onboarded";
+let SETTINGS = { weight_kg: 80, height_cm: 178, age: 40, neat_kcal: 350 };
+function loadSettings() {
+  try {
+    const s = localStorage.getItem(SETTINGS_KEY);
+    if (s) {
+      const o = JSON.parse(s);
+      if (o.weight_kg) SETTINGS.weight_kg = +o.weight_kg;
+      if (o.height_cm) SETTINGS.height_cm = +o.height_cm;
+      if (o.age) SETTINGS.age = +o.age;
+      if (o.neat_kcal != null) SETTINGS.neat_kcal = +o.neat_kcal;
+    }
+  } catch (e) {}
+  document.getElementById("set-weight").value = SETTINGS.weight_kg;
+  document.getElementById("set-height").value = SETTINGS.height_cm;
+  document.getElementById("set-age").value = SETTINGS.age;
+  document.getElementById("set-neat").value = SETTINGS.neat_kcal;
+}
+function saveSettings() {
+  const w = +document.getElementById("set-weight").value || 80;
+  const h = +document.getElementById("set-height").value || 178;
+  const a = +document.getElementById("set-age").value || 40;
+  const neat = +document.getElementById("set-neat").value || 0;
+  SETTINGS = { weight_kg: w, height_cm: h, age: a, neat_kcal: neat };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(SETTINGS));
+  // Oura's active-calorie number comes straight from the ring, not from weight/age — nothing
+  // to recompute here (unlike the Strava build's HR-based kcal estimate).
+  render();
+  toast("Settings saved");
+}
+
+// ---------- first-run onboarding wizard ----------
+// Collects weight (lb), height (ft/in), age, and a non-exercise-activity level (mapped to a
+// NEAT kcal/day value), then writes them into SETTINGS so "calories burned" is accurate from
+// day one. Shown only until the user completes or skips it (tracked by ONBOARD_KEY); existing
+// users who already have saved settings never see it.
+function lbToKg(lb) { return Math.round(lb * 0.453592 * 10) / 10; }
+function ftInToCm(ft, inch) { return Math.round((ft * 12 + (inch || 0)) * 2.54); }
+
+function maybeShowOnboarding() {
+  let onboarded = false, hasSettings = false;
+  try { onboarded = !!localStorage.getItem(ONBOARD_KEY); } catch (e) {}
+  try { hasSettings = !!localStorage.getItem(SETTINGS_KEY); } catch (e) {}
+  if (onboarded || hasSettings) return; // returning user — skip
+  const ov = document.getElementById("onboard");
+  if (!ov) return;
+  const acts = document.getElementById("ob-acts");
+  const exactWrap = document.getElementById("ob-exact-wrap");
+  acts.addEventListener("change", () => {
+    acts.querySelectorAll(".act-opt").forEach(o => o.classList.toggle("sel", o.querySelector("input").checked));
+    const v = acts.querySelector("input[name=ob-act]:checked");
+    const custom = v && v.value === "custom";
+    exactWrap.classList.toggle("show", custom);
+    if (custom) document.getElementById("ob-neat").focus();
+  });
+  document.getElementById("ob-skip").addEventListener("click", () => {
+    try { localStorage.setItem(ONBOARD_KEY, "skipped"); } catch (e) {}
+    ov.classList.remove("show"); // keeps current defaults; user can set numbers in Settings later
+  });
+  document.getElementById("ob-save").addEventListener("click", completeOnboarding);
+  ov.classList.add("show");
+  setTimeout(() => { const w = document.getElementById("ob-weight"); if (w) w.focus(); }, 50);
+}
+
+function completeOnboarding() {
+  const err = document.getElementById("ob-err");
+  const lb = +document.getElementById("ob-weight").value;
+  const ft = +document.getElementById("ob-ft").value;
+  const inch = +document.getElementById("ob-in").value || 0;
+  const age = +document.getElementById("ob-age").value;
+  const actEl = document.querySelector("input[name=ob-act]:checked");
+  let neat;
+  if (actEl && actEl.value === "custom") neat = +document.getElementById("ob-neat").value;
+  else neat = actEl ? +actEl.value : SETTINGS.neat_kcal;
+  if (!lb || lb < 50) { err.textContent = "Please enter your weight in pounds."; return; }
+  if (!ft) { err.textContent = "Please enter your height (feet, and inches)."; return; }
+  if (!age || age < 13) { err.textContent = "Please enter your age."; return; }
+  if (neat == null || isNaN(neat) || neat < 0) { err.textContent = "Please pick an activity level (or enter a number)."; return; }
+  err.textContent = "";
+  SETTINGS = { weight_kg: lbToKg(lb), height_cm: ftInToCm(ft, inch), age: age, neat_kcal: Math.round(neat) };
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(SETTINGS)); } catch (e) {}
+  try { localStorage.setItem(ONBOARD_KEY, "done"); } catch (e) {}
+  // Mirror into the Settings panel inputs
+  document.getElementById("set-weight").value = SETTINGS.weight_kg;
+  document.getElementById("set-height").value = SETTINGS.height_cm;
+  document.getElementById("set-age").value = SETTINGS.age;
+  document.getElementById("set-neat").value = SETTINGS.neat_kcal;
+  document.getElementById("onboard").classList.remove("show");
+  render();
+  toast("You're all set — welcome!");
+}
+
+// Mifflin–St Jeor BMR (men): 10w + 6.25h − 5a + 5  (kcal/day at total rest)
+function pureBmr() {
+  return Math.round(10 * SETTINGS.weight_kg + 6.25 * SETTINGS.height_cm - 5 * SETTINGS.age + 5);
+}
+// For backward compat — callers that just need BMR from current settings
+function bmrPerDay() { return pureBmr(); }
+// Full resting burn = stored BMR + stored NEAT (or defaults from settings)
+function restingBurnPerDay(dayData) {
+  const bmr = (dayData && dayData.bmr_per_day != null) ? dayData.bmr_per_day : pureBmr();
+  const neat = (dayData && dayData.neat_kcal != null) ? dayData.neat_kcal : SETTINGS.neat_kcal;
+  return bmr + neat;
+}
+function restingCaloriesForDate(dateStr, dayData) {
+  const total = restingBurnPerDay(dayData);
+  if (dateStr === TODAY) {
+    const now = new Date();
+    const minutesElapsed = now.getHours() * 60 + now.getMinutes();
+    return Math.round(total * (minutesElapsed / 1440));
+  }
+  return total; // full day
+}
+
+// ---------- file format (food-log) ----------
+function parseFile(text) {
+  const empty = { food: [], exercise: [] };
+  if (!text) return empty;
+  const i = text.lastIndexOf(DATA_OPEN);
+  if (i < 0) return empty;
+  const j = text.indexOf(DATA_CLOSE, i);
+  if (j < 0) return empty;
+  const jsonStr = text.substring(i + DATA_OPEN.length, j).trim();
+  try {
+    const obj = JSON.parse(jsonStr);
+    const result = { food: Array.isArray(obj.food) ? obj.food : [], exercise: Array.isArray(obj.exercise) ? obj.exercise : [] };
+    if (obj.bmr_per_day != null) result.bmr_per_day = +obj.bmr_per_day;
+    if (obj.neat_kcal != null) result.neat_kcal = +obj.neat_kcal;
+    return result;
+  } catch (e) { return empty; }
+}
+function totals(data) {
+  let calIn = 0, p = 0, c = 0, f = 0, calOut = 0, vo2 = 0;
+  data.food.forEach(e => { calIn += +e.cal || 0; p += +e.p || 0; c += +e.c || 0; f += +e.f || 0; });
+  data.exercise.forEach(e => { calOut += +e.cal || 0; vo2 += +e.vo2 || 0; });
+  return {
+    calIn: Math.round(calIn),
+    calOut: Math.round(calOut),
+    p: Math.round(p * 10) / 10,
+    c: Math.round(c * 10) / 10,
+    f: Math.round(f * 10) / 10,
+    vo2: Math.round(vo2)
+  };
+}
+function ouraTotals(activities) {
+  let cal = 0, vo2 = 0;
+  (activities || []).forEach(a => { cal += +a.kcal || 0; vo2 += +a.vo2_min || 0; });
+  return { cal: Math.round(cal), vo2: Math.round(vo2) };
+}
+function buildFile(date, data) {
+  const tot = totals(data);
+  const net = tot.calIn - tot.calOut; // manual-only net for frontmatter; Oura is synced separately
+  // Snapshot BMR + NEAT for this day. Use stored values if already set (preserves history);
+  // otherwise capture current settings so this day's resting burn is frozen at save time.
+  const storedBmr = data.bmr_per_day != null ? data.bmr_per_day : pureBmr();
+  const storedNeat = data.neat_kcal != null ? data.neat_kcal : SETTINGS.neat_kcal;
+  const lines = [];
+  lines.push("---");
+  lines.push("title: Food Log " + date);
+  lines.push("date: " + date);
+  lines.push("category: health");
+  lines.push("type: food-log");
+  lines.push("calories_in: " + tot.calIn);
+  lines.push("calories_out_manual: " + tot.calOut);
+  lines.push("net_calories_manual: " + net);
+  lines.push("protein_g: " + tot.p);
+  lines.push("carbs_g: " + tot.c);
+  lines.push("fat_g: " + tot.f);
+  lines.push("vo2_zone_min_manual: " + tot.vo2);
+  lines.push("bmr_per_day: " + storedBmr);
+  lines.push("neat_kcal: " + storedNeat);
+  lines.push("---");
+  lines.push("");
+  lines.push("## Summary");
+  lines.push("- Calories in: **" + tot.calIn + "** · manual exercise out: **" + tot.calOut + "**");
+  lines.push("- Protein **" + tot.p + "g** · Carbs **" + tot.c + "g** · Fat **" + tot.f + "g**");
+  lines.push("- Manual VO₂max zone minutes: **" + tot.vo2 + "**");
+  lines.push("- Resting burn: BMR **" + storedBmr + "** + NEAT **" + storedNeat + "** = **" + (storedBmr + storedNeat) + "** kcal/day");
+  lines.push("- _(Oura-derived burn + activity minutes are synced nightly and not duplicated here.)_");
+  lines.push("");
+  lines.push("## Food");
+  if (data.food.length === 0) lines.push("_(none yet)_");
+  else data.food.forEach(e => {
+    const note = e.note ? " _(" + e.note + ")_" : "";
+    lines.push("- " + e.time + " — " + e.name + note + " — " + (e.cal || 0) + " cal · " + (e.p || 0) + "P / " + (e.c || 0) + "C / " + (e.f || 0) + "F");
+  });
+  lines.push("");
+  lines.push("## Manual exercise");
+  if (data.exercise.length === 0) lines.push("_(none yet)_");
+  else data.exercise.forEach(e => {
+    const dur = e.dur ? " (" + e.dur + " min)" : "";
+    lines.push("- " + e.time + " — " + e.name + dur + " — " + (e.cal || 0) + " cal · " + (e.vo2 || 0) + " VO₂ min");
+  });
+  lines.push("");
+  lines.push(DATA_OPEN);
+  lines.push(JSON.stringify({ food: data.food, exercise: data.exercise, bmr_per_day: storedBmr, neat_kcal: storedNeat }));
+  lines.push(DATA_CLOSE);
+  lines.push("");
+  return lines.join("\n");
+}
+
+// ---------- Oura parsing ----------
+// Each day's Oura data is one JSON file (BASE/oura/YYYY-MM-DD.json), written nightly by the
+// user's own scheduled task (see CONNECTORS.md) with the shape:
+//   { date, active_calories, total_calories, steps, high_activity_minutes, readiness_score }
+// Unlike Strava (multiple activity files per day, HR-based calorie estimation), Oura always
+// reports real active-calorie and activity-minute numbers directly, so no estimation fallback
+// is needed here.
+function parseOuraDay(text, fallbackDate) {
+  if (!text) return null;
+  let obj;
+  try { obj = JSON.parse(text); } catch (e) { return null; }
+  if (!obj || typeof obj !== "object") return null;
+  const date = obj.date || fallbackDate || "";
+  return {
+    date,
+    sport: "Daily activity",
+    time: "",
+    kcal: Math.round(+obj.active_calories || 0),
+    total_kcal: Math.round(+obj.total_calories || 0),
+    steps: Math.round(+obj.steps || 0),
+    vo2_min: Math.round(+obj.high_activity_minutes || 0),
+    readiness: obj.readiness_score != null ? Math.round(+obj.readiness_score) : null
+  };
+}
+
+// ---------- Food library ----------
+// Personal library of foods logged before. Stored as a Markdown file with a JSON DATA block.
+// On every save (manual / AI / edit) the corresponding entry is upserted. On add, we check the
+// library BEFORE calling Haiku — exact match on normalized name skips the AI roundtrip entirely.
+
+let LIBRARY = {};  // { normalizedName: { cal, p, c, f, note, source, original_name, updated } }
+let LIBRARY_DIRTY = false;
+let LIBRARY_SAVE_LOCK = Promise.resolve();
+
+function libraryKey(name) {
+  return String(name || "").toLowerCase().trim().replace(/\s+/g, " ");
+}
+function libraryGet(name) {
+  const k = libraryKey(name);
+  return k && LIBRARY[k] ? LIBRARY[k] : null;
+}
+function librarySet(name, fields, source) {
+  const k = libraryKey(name);
+  if (!k) return;
+  LIBRARY[k] = {
+    cal: +fields.cal || 0,
+    p: +fields.p || 0,
+    c: +fields.c || 0,
+    f: +fields.f || 0,
+    note: fields.note || "",
+    source: source || "manual",
+    original_name: name,
+    updated: TODAY
+  };
+  LIBRARY_DIRTY = true;
+  saveLibraryDebounced();
+}
+
+function buildLibraryFile() {
+  const entries = Object.entries(LIBRARY).sort((a, b) => a[0].localeCompare(b[0]));
+  const lines = [];
+  lines.push("---");
+  lines.push("title: \"Food library\"");
+  lines.push("status: living");
+  lines.push("last_updated: " + TODAY);
+  lines.push("type: food-library");
+  lines.push("category: health");
+  lines.push("tags: [\"health\", \"nutrition\", \"food-log\"]");
+  lines.push("---");
+  lines.push("");
+  lines.push("# Food library");
+  lines.push("");
+  lines.push("Auto-maintained by the Health Tracker. Each row is a normalized food name → most recent macros from your edits or AI estimates. Library hits skip the AI call on next entry.");
+  lines.push("");
+  lines.push("## Entries (" + entries.length + ")");
+  lines.push("");
+  lines.push("| Name | Cal | P | C | F | Source | Updated |");
+  lines.push("|------|-----|---|---|---|--------|---------|");
+  for (const [k, v] of entries) {
+    lines.push("| " + (v.original_name || k) + " | " + v.cal + " | " + v.p + " | " + v.c + " | " + v.f + " | " + (v.source || "?") + " | " + (v.updated || "") + " |");
+  }
+  lines.push("");
+  lines.push("<!--DATA");
+  lines.push(JSON.stringify({ library: LIBRARY }));
+  lines.push("-->");
+  lines.push("");
+  return lines.join("\n");
+}
+
+function parseLibraryFile(text) {
+  if (!text) return {};
+  const i = text.lastIndexOf("<!--DATA");
+  if (i < 0) return {};
+  const j = text.indexOf("-->", i);
+  if (j < 0) return {};
+  try {
+    const obj = JSON.parse(text.substring(i + 8, j).trim());
+    return (obj && obj.library && typeof obj.library === "object") ? obj.library : {};
+  } catch (e) { return {}; }
+}
+
+async function loadLibrary() {
+  try {
+    const res = await window.cowork.callMcpTool(GET_TOOL, { path: LIBRARY_PATH });
+    LIBRARY = parseLibraryFile(unwrapMcp(res));
+  } catch (e) {
+    LIBRARY = {};
+  }
+}
+
+// Debounced save so rapid edits coalesce into one write
+let saveLibraryTimer = null;
+function saveLibraryDebounced() {
+  if (saveLibraryTimer) clearTimeout(saveLibraryTimer);
+  saveLibraryTimer = setTimeout(async () => {
+    if (!LIBRARY_DIRTY) return;
+    LIBRARY_DIRTY = false;
+    LIBRARY_SAVE_LOCK = LIBRARY_SAVE_LOCK.then(async () => {
+      try {
+        await window.cowork.callMcpTool(PUT_TOOL, { path: LIBRARY_PATH, content: buildLibraryFile() });
+      } catch (err) {
+        console.error("[health-tracker] Library save failed:", err);
+        LIBRARY_DIRTY = true; // retry next time
+      }
+    });
+  }, 600);
+}
+
+// ---------- Gut symptom log ----------
+// Separate rolling file (NOT per-day) — the food-log day files get rebuilt from
+// {food,exercise} on every save, so anything stored there would be clobbered.
+// Episodes are sparse, so one rolling file is cleaner than a file per day.
+let SYMPTOMS = []; // [{id,date,time,type,severity,bristol,note}]
+const SYM_TYPE_LABEL = { diarrhea: "Diarrhea", loose: "Loose stool", constipation: "Constipation", gas: "Gas / bloating", other: "Other" };
+
+function parseSymptomFile(text) {
+  if (!text) return [];
+  const i = text.lastIndexOf(DATA_OPEN);
+  if (i < 0) return [];
+  const j = text.indexOf(DATA_CLOSE, i);
+  if (j < 0) return [];
+  try {
+    const obj = JSON.parse(text.substring(i + DATA_OPEN.length, j).trim());
+    return Array.isArray(obj.symptoms) ? obj.symptoms : [];
+  } catch (e) { return []; }
+}
+
+function buildSymptomFile(list) {
+  const sorted = list.slice().sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || ""))); // newest first
+  const lines = [];
+  lines.push("---");
+  lines.push("title: Gut symptom log");
+  lines.push("status: living");
+  lines.push("last_updated: " + TODAY);
+  lines.push("type: symptom-log");
+  lines.push("category: health");
+  lines.push("tags: [\"health\", \"digestion\", \"symptom-log\"]");
+  lines.push("related: [\"food-log\"]");
+  lines.push("---");
+  lines.push("");
+  lines.push("# Gut symptom log");
+  lines.push("");
+  lines.push("Rolling, append-only log of digestive episodes, kept alongside the food log so foods can be");
+  lines.push("correlated with symptoms over time. Maintained by the Health Tracker dashboard and by Claude in chat.");
+  lines.push("");
+  lines.push("## Episodes (" + sorted.length + ")");
+  lines.push("");
+  if (sorted.length === 0) {
+    lines.push("_(none logged yet)_");
+  } else {
+    lines.push("| Date | Time | Type | Severity | Bristol | Note |");
+    lines.push("|------|------|------|----------|---------|------|");
+    sorted.forEach(s => {
+      lines.push("| " + s.date + " | " + (s.time || "") + " | " + (SYM_TYPE_LABEL[s.type] || s.type || "") + " | " + (s.severity || "") + " | " + (s.bristol || "") + " | " + String(s.note || "").replace(/\|/g, "\\|") + " |");
+    });
+  }
+  lines.push("");
+  lines.push(DATA_OPEN);
+  lines.push(JSON.stringify({ symptoms: list }));
+  lines.push(DATA_CLOSE);
+  lines.push("");
+  return lines.join("\n");
+}
+
+async function loadSymptoms() {
+  try {
+    const res = await window.cowork.callMcpTool(GET_TOOL, { path: SYMPTOM_PATH });
+    SYMPTOMS = parseSymptomFile(unwrapMcp(res));
+  } catch (e) { SYMPTOMS = []; }
+}
+async function saveSymptoms() {
+  await window.cowork.callMcpTool(PUT_TOOL, { path: SYMPTOM_PATH, content: buildSymptomFile(SYMPTOMS) });
+}
+
+function renderSymptomLog() {
+  const el = document.getElementById("symptom-log");
+  if (!el) return;
+  el.innerHTML = "";
+  if (SYMPTOMS.length === 0) {
+    el.innerHTML = "<div class=\"empty\">No episodes logged yet. Log one above when it happens — correlations need a few data points.</div>";
+    return;
+  }
+  const sorted = SYMPTOMS.slice().sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")));
+  sorted.slice(0, 20).forEach(s => {
+    const realIdx = SYMPTOMS.indexOf(s);
+    const row = document.createElement("div");
+    row.className = "log-item";
+    row.dataset.idx = realIdx;
+    row.dataset.kind = "symptom";
+    const sev = s.severity ? "<span class=\"sev " + escapeHtml(s.severity) + "\">" + escapeHtml(s.severity) + "</span> " : "";
+    const bristol = s.bristol ? " · Bristol " + escapeHtml(String(s.bristol)) : "";
+    const note = s.note ? " <span class=\"note\">(" + escapeHtml(s.note) + ")</span>" : "";
+    row.innerHTML = "<span class=\"time\" style=\"width:auto;min-width:104px;color:#78716c;\">" + escapeHtml(formatDateHuman(s.date)) + " " + escapeHtml(s.time || "") + "</span>" +
+      "<span class=\"name\">" + sev + escapeHtml(SYM_TYPE_LABEL[s.type] || s.type || "") + "<span class=\"note\">" + bristol + "</span>" + note + "</span>" +
+      "<span class=\"stats\"></span>" +
+      "<span class=\"actions\"><button class=\"icon x\" title=\"Remove\">×</button></span>";
+    el.appendChild(row);
+  });
+}
+
+// Build a millisecond timestamp from a date string + HH:MM time (local tz). Missing/odd time → noon.
+function tsOf(date, time) {
+  const t = String(time || "").trim();
+  const m = t.match(/^(\d{1,2}):(\d{2})/);
+  const hh = m ? String(m[1]).padStart(2, "0") : "12";
+  const mm = m ? m[2] : "00";
+  const d = new Date(date + "T" + hh + ":" + mm + ":00");
+  return d.getTime();
+}
+
+// Pull every food entry across all day files into a flat list of {date,time,name,ts}.
+async function gatherAllFood() {
+  let names = [];
+  try { const res = await window.cowork.callMcpTool(LIST_TOOL, { path: VAULT_DIR }); names = parseDirListing(unwrapMcp(res)); } catch (e) {}
+  const dayFiles = names.filter(n => typeof n === "string" && /^\d{4}-\d{2}-\d{2}\.md$/.test(n));
+  const paths = dayFiles.map(n => VAULT_DIR + "/" + n);
+  const events = [];
+  if (paths.length === 0) return events;
+  const r2 = await window.cowork.callMcpTool(BATCH_TOOL, { paths: paths });
+  const text = unwrapMcp(r2);
+  const bodies = splitBatch(text, paths);
+  Object.entries(bodies).forEach(([path, body]) => {
+    const m = path.match(/(\d{4}-\d{2}-\d{2})\.md$/);
+    const date = m ? m[1] : "";
+    if (!date) return;
+    const parsed = parseFile(body);
+    parsed.food.forEach(f => {
+      if (!f || !f.name) return;
+      events.push({ date, time: f.time || "12:00", name: f.name, ts: tsOf(date, f.time) });
+    });
+  });
+  return events;
+}
+
+function corrMsg(msg) {
+  return "<div class=\"corr-msg\">" + escapeHtml(msg) + "</div>";
+}
+
+// Correlate foods with symptom episodes. For each food eaten, check whether a diarrhea/loose
+// episode falls within [eaten + lagMin, eaten + lagMax]. Foods that precede episodes at a rate
+// above the overall base rate (and were eaten ≥2 times, implicated in ≥2 episodes) are flagged.
+async function runCorrelation() {
+  const panel = document.getElementById("corr-panel");
+  const btn = document.getElementById("corr-btn");
+  if (!panel || !btn || btn.disabled) return;
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = "Analyzing<span class=\"spinner\"></span>";
+  panel.innerHTML = "";
+  try {
+    const minH = Math.max(0, +document.getElementById("corr-min").value || 6);
+    let maxH = +document.getElementById("corr-max").value || 48;
+    if (maxH <= minH) maxH = minH + 1;
+    const lagMin = minH * 3600e3, lagMax = maxH * 3600e3;
+
+    const episodes = SYMPTOMS
+      .filter(s => s.type === "diarrhea" || s.type === "loose")
+      .map(s => ({ ts: tsOf(s.date, s.time), date: s.date }));
+    if (episodes.length < 2) {
+      panel.innerHTML = corrMsg("Not enough episodes yet. Log at least 2 diarrhea / loose-stool episodes (and keep logging meals for a couple of weeks), then re-run. So far: " + episodes.length + " episode" + (episodes.length === 1 ? "" : "s") + ".");
+      return;
+    }
+
+    const allFood = await gatherAllFood();
+    if (allFood.length === 0) {
+      panel.innerHTML = corrMsg("No food entries found to correlate against.");
+      return;
+    }
+
+    // Only count food whose window has fully elapsed (so very recent meals that couldn't yet
+    // have produced an episode don't unfairly drag a food's rate down).
+    const now = Date.now();
+    const food = allFood.filter(fe => fe.ts + lagMax <= now);
+    if (food.length === 0) {
+      panel.innerHTML = corrMsg("No meals old enough to evaluate against the chosen window yet.");
+      return;
+    }
+
+    const epTs = episodes.map(e => e.ts);
+    const agg = {}; // key -> {name, occ, hits, eps:Set}
+    food.forEach(fe => {
+      const key = fe.name.toLowerCase().trim().replace(/\s+/g, " ");
+      if (!key) return;
+      if (!agg[key]) agg[key] = { name: fe.name, occ: 0, hits: 0, eps: new Set() };
+      agg[key].occ++;
+      let hit = false;
+      epTs.forEach((et, i) => {
+        if (et >= fe.ts + lagMin && et <= fe.ts + lagMax) { hit = true; agg[key].eps.add(i); }
+      });
+      if (hit) agg[key].hits++;
+    });
+
+    const totalOcc = food.length;
+    const totalHits = Object.values(agg).reduce((a, b) => a + b.hits, 0);
+    const baseRate = totalOcc ? totalHits / totalOcc : 0;
+    const minEps = Math.min(2, episodes.length);
+
+    let rows = Object.values(agg).map(a => {
+      const rate = a.occ ? a.hits / a.occ : 0;
+      return {
+        name: a.name, occ: a.occ, hits: a.hits, eps: a.eps.size, rate: rate,
+        lift: baseRate ? rate / baseRate : 0,
+        suspect: a.occ >= 2 && rate > baseRate && a.eps.size >= minEps
+      };
+    });
+    // Show only foods that preceded at least one episode; suspects first, then by episodes & rate.
+    rows = rows.filter(r => r.hits > 0);
+    rows.sort((a, b) => (b.suspect - a.suspect) || (b.eps - a.eps) || (b.rate - a.rate) || (b.occ - a.occ));
+
+    const dates = food.map(f => f.date).sort();
+    const coverage = dates.length ? (dates[0] + " → " + dates[dates.length - 1]) : "—";
+    const suspects = rows.filter(r => r.suspect);
+
+    let html = "";
+    html += "<div class=\"corr-summary\">";
+    html += "Analyzed <b>" + episodes.length + "</b> diarrhea/loose episodes against <b>" + totalOcc + "</b> meals (" + coverage + "). ";
+    html += "Window: foods eaten <b>" + minH + "–" + maxH + "h</b> before an episode. ";
+    html += "Baseline: " + Math.round(baseRate * 100) + "% of all meals happen to fall before an episode by chance.";
+    html += "</div>";
+
+    if (rows.length === 0) {
+      html += corrMsg("No food was eaten in the window before any episode. Try widening the window, or keep logging.");
+      panel.innerHTML = html;
+      return;
+    }
+
+    const maxRate = Math.max(...rows.map(r => r.rate), 0.0001);
+    html += "<table class=\"corr-table\"><thead><tr>" +
+      "<th>Food</th><th class=\"num\">Eaten</th><th class=\"num\">Before episode</th><th class=\"num\">Rate</th><th class=\"num\">vs base</th><th>" +
+      "</th></tr></thead><tbody>";
+    rows.slice(0, 25).forEach(r => {
+      const pct = Math.round(r.rate * 100);
+      const liftStr = r.lift >= 1 ? (Math.round(r.lift * 10) / 10) + "×" : "—";
+      const barW = Math.round((r.rate / maxRate) * 90);
+      html += "<tr class=\"" + (r.suspect ? "suspect" : "") + "\">" +
+        "<td>" + (r.suspect ? "⚠️ " : "") + escapeHtml(r.name) + "</td>" +
+        "<td class=\"num\">" + r.occ + "</td>" +
+        "<td class=\"num\">" + r.hits + " (" + r.eps + " ep)</td>" +
+        "<td class=\"num\">" + pct + "%</td>" +
+        "<td class=\"num\">" + liftStr + "</td>" +
+        "<td><span class=\"corr-bar\" style=\"width:" + barW + "px\"></span></td>" +
+        "</tr>";
+    });
+    html += "</tbody></table>";
+
+    if (suspects.length) {
+      html += "<div class=\"corr-summary\" style=\"margin-top:10px;\">⚠️ <b>Top suspects:</b> " +
+        escapeHtml(suspects.slice(0, 5).map(s => s.name).join(", ")) +
+        ". These were eaten before episodes more often than chance would predict — leads to watch, not proof. Correlation isn't causation, and results assume you logged symptoms consistently.</div>";
+    } else {
+      html += "<div class=\"corr-summary\" style=\"margin-top:10px;\">No food stands out above the baseline yet. Keep logging — patterns sharpen with more episodes.</div>";
+    }
+
+    panel.innerHTML = html;
+  } catch (e) {
+    console.error("[health-tracker] correlation failed:", e);
+    panel.innerHTML = corrMsg("Analysis failed: " + (e && (e.message || e)));
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+// ---------- Claude macro estimation ----------
+async function estimateMacros(description) {
+  const prompt = "Estimate nutrition for this food. Respond with ONLY a single JSON object on one line — no markdown, no commentary." +
+    "\nFormat: {\"cal\": number, \"p\": number, \"c\": number, \"f\": number, \"note\": \"brief portion assumption\"}" +
+    "\nIf the user specified quantity (e.g. \"2 eggs\", \"large\", \"8 oz\"), use that. Otherwise assume one standard serving." +
+    "\nUse realistic restaurant/home values. Round protein/carbs/fat to whole grams." +
+    "\n\nFood: " + description;
+  const res = await window.cowork.askClaude(prompt, []);
+  const text = typeof res === "string" ? res : (res && (res.text || res.content) || JSON.stringify(res));
+  const m = text.match(/\{[\s\S]*?\}/);
+  if (!m) throw new Error("No JSON in response: " + text.substring(0, 100));
+  const obj = JSON.parse(m[0]);
+  return {
+    cal: Math.round(+obj.cal || 0),
+    p: Math.round(+obj.p || 0),
+    c: Math.round(+obj.c || 0),
+    f: Math.round(+obj.f || 0),
+    note: (obj.note || "").toString().slice(0, 60)
+  };
+}
+
+// ---------- I/O ----------
+let DIAG = { today: null, week: null, oura: null };
+function shapeSummary(x) {
+  if (x == null) return "null";
+  if (typeof x === "string") return "string(" + x.length + "): " + x.slice(0, 200);
+  if (Array.isArray(x)) return "array(" + x.length + ") sample: " + JSON.stringify(x.slice(0, 2)).slice(0, 300);
+  if (typeof x === "object") {
+    const keys = Object.keys(x);
+    return "object{" + keys.join(",") + "} sample: " + JSON.stringify(x).slice(0, 300);
+  }
+  return typeof x + ": " + String(x).slice(0, 200);
+}
+function updateDiag() {
+  const el = document.getElementById("diag-content");
+  if (!el) return;
+  const parts = [];
+  parts.push("BASE = " + (BASE || "(not found)"));
+  parts.push("TODAY = " + TODAY + "   VIEWING_DATE = " + VIEWING_DATE);
+  const diagBmr = (DATA.bmr_per_day != null) ? DATA.bmr_per_day : pureBmr();
+  const diagNeat = (DATA.neat_kcal != null) ? DATA.neat_kcal : SETTINGS.neat_kcal;
+  parts.push("Resting (full day) = BMR " + diagBmr + " + NEAT " + diagNeat + " = " + (diagBmr + diagNeat) + " kcal");
+  parts.push("Library: " + Object.keys(LIBRARY).length + " items");
+  parts.push("Symptoms logged: " + SYMPTOMS.length);
+  parts.push("");
+  parts.push("== Today's food log ==");
+  if (DIAG.today) {
+    parts.push("path: " + DIAG.today.path);
+    if (DIAG.today.error) parts.push("ERROR: " + DIAG.today.error);
+    parts.push("raw response: " + DIAG.today.raw);
+    parts.push("unwrapped (first 300): " + DIAG.today.unwrapped);
+    parts.push("parsed: " + DIAG.today.food + " food entries, " + DIAG.today.exercise + " manual exercise");
+  } else { parts.push("(not yet loaded)"); }
+  parts.push("");
+  parts.push("== Oura (past 7 days) ==");
+  parts.push(DIAG.oura || "(no Oura data synced yet — check your scheduled task, or ask Claude to \"run my Oura import now\")");
+  parts.push("");
+  parts.push("== Week food logs ==");
+  parts.push(DIAG.week || "(not yet loaded)");
+  el.textContent = parts.join("\n");
+}
+
+async function loadFoodLog(date) {
+  const path = VAULT_DIR + "/" + date + ".md";
+  const isToday = date === VIEWING_DATE;
+  try {
+    const res = await window.cowork.callMcpTool(GET_TOOL, { path: path });
+    const unwrapped = unwrapMcp(res);
+    const parsed = parseFile(unwrapped);
+    if (isToday) {
+      DIAG.today = {
+        path,
+        raw: shapeSummary(res),
+        unwrapped: (typeof unwrapped === "string" ? unwrapped : JSON.stringify(unwrapped)).slice(0, 300),
+        food: parsed.food.length,
+        exercise: parsed.exercise.length
+      };
+      updateDiag();
+    }
+    return parsed;
+  } catch (e) {
+    if (isToday) {
+      DIAG.today = { path, error: String(e && (e.message || e)), raw: "(threw)" };
+      updateDiag();
+    }
+    return { food: [], exercise: [] };
+  }
+}
+async function saveFoodLog(date, data) {
+  const path = VAULT_DIR + "/" + date + ".md";
+  await window.cowork.callMcpTool(PUT_TOOL, { path: path, content: buildFile(date, data) });
+}
+async function listOuraFiles() {
+  let u = "";
+  try { const res = await window.cowork.callMcpTool(LIST_TOOL, { path: OURA_DIR }); u = unwrapMcp(res); }
+  catch (e) { return []; }
+  DIAG.ouraListRaw = (typeof u === "string" ? u : JSON.stringify(u)).slice(0, 200);
+  const arr = parseDirListing(u);
+  return arr.filter(n => typeof n === "string" && n.endsWith(".json"));
+}
+function splitBatch(text, paths) {
+  // read_multiple_files format: "{fullpath}:\n{body}" entries joined by "\n---\n".
+  // File bodies contain "---" (frontmatter) and "# Heading" lines, so we can't split on those.
+  // Instead, locate each requested path's literal "{path}:" header and slice between them — an
+  // absolute path string won't appear inside a file body.
+  const out = {};
+  const positions = [];
+  paths.forEach(p => {
+    const header = p + ":";
+    const idx = text.indexOf(header);
+    if (idx >= 0) positions.push({ path: p, start: idx, headerLen: header.length });
+  });
+  positions.sort((a, b) => a.start - b.start);
+  positions.forEach((pos, i) => {
+    const nextStart = i + 1 < positions.length ? positions[i + 1].start : text.length;
+    let body = text.substring(pos.start + pos.headerLen, nextStart);
+    body = body.replace(/^\n+/, "").replace(/\n+---\n*\s*$/, "");
+    out[pos.path] = body;
+  });
+  return out;
+}
+async function loadOuraForDates(dates) {
+  // Returns { [date]: [activities] } — 0 or 1 "activity" per date, kept as an array so the rest
+  // of the dashboard (dayBurnTotals/render/renderExLog) can treat it exactly like the Strava
+  // build's per-day activity list. Oura files are named deterministically (BASE/oura/YYYY-MM-DD.json),
+  // so we only need to know which of the requested dates actually have a file before batch-reading.
+  const byDate = {};
+  dates.forEach(d => byDate[d] = []);
+  const existing = await listOuraFiles(); // e.g. ["2026-07-08.json", "2026-07-09.json"]
+  const existingDates = new Set(existing.map(n => n.replace(/\.json$/, "")));
+  const targetPaths = dates.filter(d => existingDates.has(d)).map(d => OURA_DIR + "/" + d + ".json");
+  if (targetPaths.length === 0) return byDate;
+  const res = await window.cowork.callMcpTool(BATCH_TOOL, { paths: targetPaths });
+  const text = unwrapMcp(res);
+  const bodies = splitBatch(text, targetPaths);
+  Object.entries(bodies).forEach(([path, body]) => {
+    const m = path.match(/(\d{4}-\d{2}-\d{2})\.json$/);
+    const fallbackDate = m ? m[1] : "";
+    const act = parseOuraDay(body, fallbackDate);
+    if (act && byDate[act.date] !== undefined) {
+      act.title = "Daily activity";
+      byDate[act.date].push(act);
+    }
+  });
+  return byDate;
+}
+
+// ---------- state ----------
+let TODAY = localDateStr();
+let VIEWING_DATE = TODAY; // the date currently displayed/edited. Defaults to today, navigable.
+let DATA = { food: [], exercise: [] };
+let WEEK_DATA = {};
+let OURA = {}; // keyed by date, array of activities (0 or 1 Oura daily-activity entry per date)
+// Tracks the viewing-date for which Oura activity has finished loading.
+let OURA_READY_DATE = null;
+let chart = null;
+
+function isViewingToday() { return VIEWING_DATE === TODAY; }
+function addDays(dateStr, n) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  return localDateStr(dt);
+}
+function pastNDates(endDateStr, n) {
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(addDays(endDateStr, -i));
+  return out;
+}
+function formatDateHuman(dateStr) {
+  // e.g. "Mon, Jun 2"
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+// ---------- render ----------
+function setSaving(prefix, on) {
+  const el = document.getElementById(prefix + "-saving");
+  if (el) el.innerHTML = on ? "saving<span class=\"spinner\"></span>" : "";
+}
+function setBtnLoading(id, on, normalLabel) {
+  const b = document.getElementById(id);
+  if (!b) return;
+  b.disabled = on;
+  b.innerHTML = on ? "Estimating<span class=\"spinner\"></span>" : normalLabel;
+}
+
+function dayBurnTotals(date, manualData) {
+  const data = manualData || { food: [], exercise: [] };
+  const ouraAct = OURA[date] || [];
+  const sT = ouraTotals(ouraAct);
+  const mT = totals(data);
+  // A PAST day with no entries logged shows nothing for calories burned (no phantom deficit
+  // in the chart). TODAY is different — it's a live "so far today" counter, so resting (BMR)
+  // accrues through the day even before anything is logged.
+  const hasEntries = (Array.isArray(data.food) && data.food.length > 0) ||
+                     (Array.isArray(data.exercise) && data.exercise.length > 0);
+  const counted = (date === TODAY) || hasEntries;
+  const resting = counted ? restingCaloriesForDate(date, data) : 0;
+  const ouraCal = counted ? sT.cal : 0;
+  const manualCal = counted ? mT.calOut : 0;
+  const active = ouraCal + manualCal;
+  return {
+    resting_cal: resting,
+    oura_cal: ouraCal,
+    manual_cal: manualCal,
+    active_cal: active,
+    total_cal: resting + active,
+    oura_vo2: sT.vo2,
+    manual_vo2: mT.vo2,
+    total_vo2: sT.vo2 + mT.vo2,
+    hasEntries: hasEntries,
+    counted: counted
+  };
+}
+
+function render() {
+  const tot = totals(DATA);
+  const burn = dayBurnTotals(VIEWING_DATE, DATA);
+  const net = tot.calIn - burn.total_cal;
+  const viewingToday = isViewingToday();
+
+  // Hero date label
+  const lbl = document.getElementById("hero-date");
+  if (lbl) lbl.textContent = (viewingToday ? "Today · " : "Viewing · ") + formatDateHuman(VIEWING_DATE);
+
+  // Don't show a confident net until the viewed day's activities have loaded.
+  const burnReady = (OURA_READY_DATE === VIEWING_DATE);
+
+  const big = document.getElementById("net");
+  const sub = document.getElementById("net-sub");
+  if (!burnReady) {
+    big.textContent = "…";
+    big.className = "big neutral";
+    sub.textContent = "Loading…";
+  } else {
+    const sign = net > 0 ? "+" : "";
+    big.textContent = sign + net;
+    big.className = "big " + (net < 0 ? "deficit" : (net > 0 ? "surplus" : "neutral"));
+    if (tot.calIn === 0 && burn.total_cal === 0) {
+      sub.textContent = viewingToday ? "No entries or workouts logged today." : "No entries or workouts on this day.";
+    } else if (net < 0) {
+      sub.textContent = viewingToday
+        ? "You've burned " + Math.abs(net) + " more calories than you've consumed."
+        : "Burned " + Math.abs(net) + " more calories than consumed.";
+    } else if (net > 0) {
+      sub.textContent = viewingToday
+        ? "You've consumed " + net + " more calories than you've burned."
+        : "Consumed " + net + " more calories than burned.";
+    } else {
+      sub.textContent = "Even — intake matches burn.";
+    }
+  }
+
+  document.getElementById("cal-in").textContent = tot.calIn + " cal";
+  document.getElementById("protein").textContent = tot.p + " g";
+  document.getElementById("carbs").textContent = tot.c + " g";
+  document.getElementById("fat").textContent = tot.f + " g";
+
+  document.getElementById("cal-out").textContent = burnReady ? (burn.total_cal + " cal") : "…";
+  document.getElementById("cal-rest").textContent = burn.resting_cal + " cal";
+  renderNeatTag();
+  document.getElementById("cal-active").textContent = burnReady ? (burn.active_cal + " cal") : "loading…";
+  const calBd = [];
+  if (burnReady && burn.oura_cal) calBd.push(burn.oura_cal + " Oura");
+  if (burnReady && burn.manual_cal) calBd.push(burn.manual_cal + " manual");
+  document.getElementById("cal-out-bd").textContent = calBd.length ? "(" + calBd.join(" + ") + ")" : "";
+
+  document.getElementById("vo2-today").textContent = burnReady ? (burn.total_vo2 + " min") : "…";
+  const vo2Bd = [];
+  if (burnReady && burn.oura_vo2) vo2Bd.push(burn.oura_vo2 + " Oura");
+  if (burnReady && burn.manual_vo2) vo2Bd.push(burn.manual_vo2 + " manual");
+  document.getElementById("vo2-today-bd").textContent = vo2Bd.length ? "(" + vo2Bd.join(" + ") + ")" : "";
+
+  // Week VO2 (today + past 6 days)
+  let wkVo2 = burn.total_vo2;
+  Object.keys(WEEK_DATA).forEach(d => {
+    const dB = dayBurnTotals(d, WEEK_DATA[d]);
+    wkVo2 += dB.total_vo2;
+  });
+  document.getElementById("vo2-week").textContent = wkVo2 + " min";
+  document.getElementById("vo2-avg").textContent = (Math.round((wkVo2 / 7) * 10) / 10) + " min";
+
+  renderFoodLog();
+  renderExLog();
+  renderSymptomLog();
+  renderChart();
+}
+
+function renderNeatTag() {
+  const tag = document.getElementById("neat-tag");
+  if (!tag) return;
+  const dayNeat = (DATA.neat_kcal != null) ? DATA.neat_kcal : SETTINGS.neat_kcal;
+  const isDefault = (DATA.neat_kcal == null);
+  tag.innerHTML = "NEAT: " + dayNeat + (isDefault ? " (default)" : "") +
+    " <button class=\"icon edit\" id=\"neat-edit-btn\" title=\"Adjust NEAT for this day\">✎</button>";
+  document.getElementById("neat-edit-btn").addEventListener("click", openNeatEdit);
+}
+function openNeatEdit() {
+  const tag = document.getElementById("neat-tag");
+  if (!tag) return;
+  const dayNeat = (DATA.neat_kcal != null) ? DATA.neat_kcal : SETTINGS.neat_kcal;
+  tag.innerHTML = "<input type=\"number\" id=\"neat-day-input\" min=\"0\" max=\"1000\" step=\"10\" value=\"" + dayNeat + "\">" +
+    " <button class=\"nb ok\" id=\"neat-day-save\">OK</button>" +
+    "<button class=\"nb cc\" id=\"neat-day-cancel\">Cancel</button>";
+  const inp = document.getElementById("neat-day-input");
+  inp.focus();
+  inp.select();
+  document.getElementById("neat-day-save").addEventListener("click", saveNeatForDay);
+  document.getElementById("neat-day-cancel").addEventListener("click", () => renderNeatTag());
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") saveNeatForDay(); if (e.key === "Escape") renderNeatTag(); });
+}
+async function saveNeatForDay() {
+  const val = +document.getElementById("neat-day-input").value || 0;
+  DATA.neat_kcal = val;
+  // If this day didn't have a stored BMR yet, capture it now
+  if (DATA.bmr_per_day == null) DATA.bmr_per_day = pureBmr();
+  render();
+  try {
+    await saveFoodLog(VIEWING_DATE, DATA);
+    toast("NEAT updated to " + val + " for " + VIEWING_DATE);
+  } catch (err) {
+    toast("Save failed", true);
+  }
+}
+
+function renderFoodLog() {
+  const fl = document.getElementById("food-log");
+  fl.innerHTML = "";
+  if (DATA.food.length === 0) {
+    fl.innerHTML = "<div class=\"empty\">No food logged yet today.</div>";
+    return;
+  }
+  const SOURCE_BADGE = { library: "📚", ai: "✨", manual: "✋", edited: "✎" };
+  const SOURCE_TITLE = { library: "From your saved library", ai: "AI estimate — click ✎ to correct", manual: "Manual entry", edited: "Edited" };
+  DATA.food.forEach((e, idx) => {
+    const row = document.createElement("div");
+    row.className = "log-item" + (e._pending ? " pending" : "");
+    row.dataset.idx = idx;
+    row.dataset.kind = "food";
+    const note = e.note ? " <span class=\"note\">(" + escapeHtml(e.note) + ")</span>" : "";
+    const stats = e._pending ? "estimating…" : (e.cal || 0) + " cal · " + (e.p || 0) + "P/" + (e.c || 0) + "C/" + (e.f || 0) + "F";
+    const src = e.source || "manual";
+    const badge = SOURCE_BADGE[src] ? "<span title=\"" + escapeHtml(SOURCE_TITLE[src] || "") + "\" style=\"opacity:0.55;font-size:11px;margin-right:4px;\">" + SOURCE_BADGE[src] + "</span>" : "";
+    row.innerHTML = "<span class=\"time\">" + escapeHtml(e.time || "") + "</span>" +
+      "<span class=\"name\">" + badge + escapeHtml(e.name || "") + note + "</span>" +
+      "<span class=\"stats\">" + stats + "</span>" +
+      "<span class=\"actions\">" +
+        "<button class=\"icon edit\" title=\"Edit\">✎</button>" +
+        "<button class=\"icon x\" title=\"Remove\">×</button>" +
+      "</span>";
+    fl.appendChild(row);
+  });
+}
+
+function renderExLog() {
+  const sl = document.getElementById("oura-log");
+  const el = document.getElementById("ex-log");
+  sl.innerHTML = "";
+  el.innerHTML = "";
+
+  const ouraAct = OURA[VIEWING_DATE] || [];
+  if (ouraAct.length === 0 && DATA.exercise.length === 0) {
+    el.innerHTML = "<div class=\"empty\">" + (isViewingToday() ? "No exercise logged today. Your Oura sync runs nightly — ask Claude to \"run my Oura import now\" for a fresh number." : "No exercise on this day.") + "</div>";
+    return;
+  }
+  if (ouraAct.length > 0) {
+    const head = document.createElement("div");
+    head.className = "subhead";
+    head.textContent = "From Oura";
+    sl.appendChild(head);
+    ouraAct.forEach(a => {
+      const row = document.createElement("div");
+      row.className = "log-item oura";
+      const steps = a.steps ? a.steps.toLocaleString() + " steps · " : "";
+      const readiness = a.readiness != null ? "readiness " + a.readiness : "";
+      row.innerHTML = "<span class=\"time\">" + escapeHtml(a.time || "") + "</span>" +
+        "<span class=\"name\">" + escapeHtml(a.sport) + " <span class=\"note\">" + steps + readiness + "</span></span>" +
+        "<span class=\"stats\">~" + (a.kcal || 0) + " cal · " + (a.vo2_min || 0) + " VO₂ min</span>" +
+        "<span class=\"actions\"></span>";
+      sl.appendChild(row);
+    });
+  }
+  if (DATA.exercise.length > 0) {
+    const head = document.createElement("div");
+    head.className = "subhead";
+    head.textContent = "Manual";
+    el.appendChild(head);
+    DATA.exercise.forEach((e, idx) => {
+      const row = document.createElement("div");
+      row.className = "log-item";
+      row.dataset.idx = idx;
+      row.dataset.kind = "exercise";
+      const dur = e.dur ? " <span class=\"note\">(" + e.dur + " min)</span>" : "";
+      row.innerHTML = "<span class=\"time\">" + escapeHtml(e.time || "") + "</span>" +
+        "<span class=\"name\">" + escapeHtml(e.name || "") + dur + "</span>" +
+        "<span class=\"stats\">" + (e.cal || 0) + " cal · " + (e.vo2 || 0) + " VO₂ min</span>" +
+        "<span class=\"actions\">" +
+          "<button class=\"icon edit\" title=\"Edit\">✎</button>" +
+          "<button class=\"icon x\" title=\"Remove\">×</button>" +
+        "</span>";
+      el.appendChild(row);
+    });
+  }
+}
+
+function renderChart() {
+  const ctx = document.getElementById("week-chart");
+  // 7 days ending at the currently viewed date
+  const days = pastNDates(VIEWING_DATE, 7).reverse(); // oldest first
+  const nets = days.map(d => {
+    const manual = (d === VIEWING_DATE) ? DATA : (WEEK_DATA[d] || { food: [], exercise: [] });
+    const t = totals(manual);
+    const b = dayBurnTotals(d, manual);
+    // Past days with no entries contribute no bar (null → gap, not a deficit).
+    if (!b.counted) return null;
+    return t.calIn - b.total_cal;
+  });
+  const labels = days.map(d => {
+    const p = d.split("-");
+    return parseInt(p[1], 10) + "/" + parseInt(p[2], 10);
+  });
+  const colors = nets.map(n => n == null ? "#e7e5e4" : (n < 0 ? "#22c55e" : (n > 0 ? "#ef4444" : "#a8a29e")));
+
+  // Trailing 7-day net-calorie total + average (over days that have entries / count).
+  const counted = nets.filter(n => n != null);
+  const wn = document.getElementById("week-net");
+  if (wn) {
+    if (counted.length === 0) {
+      wn.textContent = "no entries in last 7 days";
+      wn.className = "week-net";
+    } else {
+      const sum = Math.round(counted.reduce((a, b) => a + b, 0));
+      const avg = Math.round(sum / counted.length);
+      const fmt = n => (n > 0 ? "+" : "") + n.toLocaleString();
+      wn.innerHTML = fmt(sum) + " cal net" +
+        "<span class=\"sub2\">" + fmt(avg) + "/day · " + counted.length + " day" + (counted.length === 1 ? "" : "s") + "</span>";
+      wn.className = "week-net " + (sum < 0 ? "pos" : (sum > 0 ? "neg" : ""));
+    }
+  }
+
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: "bar",
+    data: { labels: labels, datasets: [{ data: nets, backgroundColor: colors, borderRadius: 4 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => c.parsed.y == null ? "No entries" : (c.parsed.y >= 0 ? "+" : "") + c.parsed.y + " net cal" } }
+      },
+      scales: {
+        y: { beginAtZero: true, grid: { color: "#f5f5f4" }, ticks: { font: { size: 11 }, color: "#78716c" } },
+        x: { grid: { display: false }, ticks: { font: { size: 11 }, color: "#78716c" } }
+      }
+    }
+  });
+}
+
+// ---------- edit / delete ----------
+function openEdit(row, kind, idx) {
+  const arr = kind === "food" ? DATA.food : DATA.exercise;
+  const e = arr[idx];
+  if (!e) return;
+  row.classList.add("editing");
+  row.innerHTML = "";
+  const mk = (name, val, ph, cls) => {
+    const i = document.createElement("input");
+    i.name = name; i.value = val == null ? "" : val; i.placeholder = ph || ""; i.className = cls || "num";
+    if (name === "time") i.type = "time";
+    else if (name !== "name") i.type = "number";
+    return i;
+  };
+  const inputs = {};
+  inputs.time = mk("time", e.time, "", "time");
+  inputs.name = mk("name", e.name, "name", "name");
+  row.appendChild(inputs.time);
+  row.appendChild(inputs.name);
+  if (kind === "food") {
+    inputs.cal = mk("cal", e.cal, "cal");
+    inputs.p = mk("p", e.p, "P");
+    inputs.c = mk("c", e.c, "C");
+    inputs.f = mk("f", e.f, "F");
+    row.appendChild(inputs.cal);
+    row.appendChild(inputs.p);
+    row.appendChild(inputs.c);
+    row.appendChild(inputs.f);
+  } else {
+    inputs.cal = mk("cal", e.cal, "cal");
+    inputs.vo2 = mk("vo2", e.vo2, "VO₂");
+    inputs.dur = mk("dur", e.dur, "min");
+    row.appendChild(inputs.cal);
+    row.appendChild(inputs.vo2);
+    row.appendChild(inputs.dur);
+  }
+  const save = document.createElement("button");
+  save.className = "save"; save.textContent = "Save";
+  const cancel = document.createElement("button");
+  cancel.className = "cancel"; cancel.textContent = "Cancel";
+  row.appendChild(save);
+  row.appendChild(cancel);
+
+  save.onclick = async () => {
+    e.time = inputs.time.value || e.time;
+    e.name = inputs.name.value.trim() || e.name;
+    e.cal = +inputs.cal.value || 0;
+    if (kind === "food") {
+      e.p = +inputs.p.value || 0;
+      e.c = +inputs.c.value || 0;
+      e.f = +inputs.f.value || 0;
+      e.source = "edited";
+    } else {
+      e.vo2 = +inputs.vo2.value || 0;
+      e.dur = +inputs.dur.value || 0;
+    }
+    arr.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+    render();
+    try {
+      await saveFoodLog(VIEWING_DATE, DATA);
+      // For food edits, update the library so the corrected values stick for next time
+      if (kind === "food") librarySet(e.name, e, "edited");
+      toast("Saved");
+    } catch (err) { toast("Save failed", true); }
+  };
+  cancel.onclick = () => { render(); };
+}
+
+document.addEventListener("click", async e => {
+  const row = e.target.closest(".log-item[data-kind]");
+  if (!row) return;
+  const idx = +row.dataset.idx;
+  const kind = row.dataset.kind;
+  // Symptoms live in their own rolling file and have delete-only rows.
+  if (kind === "symptom") {
+    if (e.target.closest("button.x")) {
+      const prev = SYMPTOMS.slice();
+      SYMPTOMS.splice(idx, 1);
+      renderSymptomLog();
+      try { await saveSymptoms(); toast("Removed"); }
+      catch (err) { SYMPTOMS = prev; renderSymptomLog(); toast("Delete failed", true); }
+    }
+    return;
+  }
+  if (e.target.closest("button.x")) {
+    const prev = JSON.parse(JSON.stringify(DATA));
+    const arr = kind === "food" ? DATA.food : DATA.exercise;
+    arr.splice(idx, 1);
+    render();
+    try { await saveFoodLog(VIEWING_DATE, DATA); toast("Removed"); }
+    catch (err) { DATA = prev; render(); toast("Delete failed", true); }
+    return;
+  }
+  if (e.target.closest("button.edit")) {
+    openEdit(row, kind, idx);
+    return;
+  }
+});
+
+// ---------- form handlers ----------
+async function handleFoodSubmit(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const name = (fd.get("name") || "").toString().trim();
+  if (!name) return;
+  const calIn = fd.get("cal"), pIn = fd.get("p"), cIn = fd.get("c"), fIn = fd.get("f");
+  const userProvided = (calIn !== "" && calIn != null);
+  const entry = {
+    id: "f" + Date.now() + Math.floor(Math.random() * 1000),
+    time: fd.get("time") || nowHM(),
+    name,
+    cal: +calIn || 0,
+    p: +pIn || 0,
+    c: +cIn || 0,
+    f: +fIn || 0,
+    note: "",
+    source: "manual"
+  };
+
+  // 1) User filled the macros explicitly → trust them; save to library so next time auto-fills.
+  if (userProvided) {
+    entry.source = "manual";
+    DATA.food.push(entry);
+    DATA.food.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+    render();
+    setSaving("food", true);
+    try {
+      await saveFoodLog(VIEWING_DATE, DATA);
+      librarySet(name, entry, "manual");
+      toast("Saved");
+    } catch (err) {
+      toast("Save failed", true);
+      DATA.food = DATA.food.filter(x => x.id !== entry.id);
+      render();
+    }
+    setSaving("food", false);
+  } else {
+    // 2) Macros blank → check library first.
+    const hit = libraryGet(name);
+    if (hit) {
+      entry.cal = hit.cal; entry.p = hit.p; entry.c = hit.c; entry.f = hit.f;
+      entry.note = hit.note;
+      entry.source = "library";
+      DATA.food.push(entry);
+      DATA.food.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+      render();
+      setSaving("food", true);
+      try {
+        await saveFoodLog(VIEWING_DATE, DATA);
+        // Bump the library entry's `updated` date even on hit (keeps frequently-used items fresh)
+        librarySet(name, entry, "library");
+        toast("From library");
+      } catch (err) {
+        toast("Save failed", true);
+        DATA.food = DATA.food.filter(x => x.id !== entry.id);
+        render();
+      }
+      setSaving("food", false);
+    } else {
+      // 3) No library hit → AI estimate (Haiku), then save to library for next time.
+      entry._pending = true;
+      DATA.food.push(entry);
+      DATA.food.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+      render();
+      setBtnLoading("food-add-btn", true, "Add");
+      try {
+        const est = await estimateMacros(name);
+        entry.cal = est.cal; entry.p = est.p; entry.c = est.c; entry.f = est.f; entry.note = est.note;
+        entry.source = "ai";
+        delete entry._pending;
+        render();
+        setSaving("food", true);
+        await saveFoodLog(VIEWING_DATE, DATA);
+        librarySet(name, entry, "ai");
+        toast("Saved (AI estimate — ✎ to correct)");
+      } catch (err) {
+        console.error(err);
+        delete entry._pending;
+        render();
+        toast("Estimation failed — edit manually", true);
+        try { await saveFoodLog(VIEWING_DATE, DATA); } catch (e2) {}
+      }
+      setSaving("food", false);
+      setBtnLoading("food-add-btn", false, "Add");
+    }
+  }
+  e.target.reset();
+  e.target.querySelector("input[name=\"time\"]").value = nowHM();
+  e.target.querySelector("input[name=\"name\"]").focus();
+}
+
+async function handleExSubmit(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const name = (fd.get("name") || "").toString().trim();
+  if (!name) return;
+  const entry = {
+    id: "e" + Date.now() + Math.floor(Math.random() * 1000),
+    time: fd.get("time") || nowHM(),
+    name,
+    cal: +fd.get("cal") || 0,
+    vo2: +fd.get("vo2") || 0,
+    dur: +fd.get("dur") || 0
+  };
+  DATA.exercise.push(entry);
+  DATA.exercise.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+  render();
+  setSaving("ex", true);
+  try { await saveFoodLog(VIEWING_DATE, DATA); toast("Saved"); }
+  catch (err) { toast("Save failed", true); DATA.exercise = DATA.exercise.filter(x => x.id !== entry.id); render(); }
+  setSaving("ex", false);
+  e.target.reset();
+  e.target.querySelector("input[name=\"time\"]").value = nowHM();
+  e.target.querySelector("input[name=\"vo2\"]").value = "0";
+  e.target.querySelector("input[name=\"name\"]").focus();
+}
+
+async function handleSymptomSubmit(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const entry = {
+    id: "s" + Date.now() + Math.floor(Math.random() * 1000),
+    date: fd.get("date") || TODAY,
+    time: fd.get("time") || nowHM(),
+    type: fd.get("type") || "diarrhea",
+    severity: fd.get("severity") || "moderate",
+    bristol: +fd.get("bristol") || 0,
+    note: (fd.get("note") || "").toString().trim()
+  };
+  SYMPTOMS.push(entry);
+  renderSymptomLog();
+  setSaving("sym", true);
+  try { await saveSymptoms(); toast("Episode logged"); }
+  catch (err) { toast("Save failed", true); SYMPTOMS = SYMPTOMS.filter(x => x.id !== entry.id); renderSymptomLog(); }
+  setSaving("sym", false);
+  e.target.reset();
+  e.target.querySelector("input[name=\"date\"]").value = TODAY;
+  e.target.querySelector("input[name=\"time\"]").value = nowHM();
+  e.target.querySelector("select[name=\"severity\"]").value = "moderate";
+}
+
+// ---------- manual Oura import ----------
+// Ported from Brad's personal dashboard: a real "run it now" button, not just a chat hint.
+// Requires the user's scheduled Oura-sync task to be named exactly OURA_TASK_NAME (the setup
+// instructions in CONNECTORS.md / README.md tell them to name it that when they create it).
+const OURA_TASK_NAME = "oura-daily-import";
+let ouraImportPolling = null;
+async function triggerOuraImport() {
+  const btn = document.getElementById("oura-import-btn");
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = "Running…<span class=\"spinner\"></span>";
+
+  try {
+    await window.cowork.runScheduledTask(OURA_TASK_NAME);
+    toast("Oura import started — polling for fresh data…");
+  } catch (e) {
+    console.error("[health-tracker] Oura import trigger failed:", e);
+    toast("Couldn't start the Oura import (is a scheduled task named \"" + OURA_TASK_NAME + "\" set up?): " + (e && e.message || e), true);
+    btn.disabled = false;
+    btn.innerHTML = orig;
+    return;
+  }
+
+  // Poll every 10s for up to ~2 min — the Oura API call + file write is quick (no Chrome
+  // navigation involved, unlike the Strava build's browser-automation ingest).
+  const dates = pastNDates(VIEWING_DATE, 7);
+  const startCount = Object.values(OURA).reduce((n, arr) => n + arr.length, 0);
+  let polls = 0;
+  const cleanup = () => {
+    if (ouraImportPolling) { clearInterval(ouraImportPolling); ouraImportPolling = null; }
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  };
+  if (ouraImportPolling) clearInterval(ouraImportPolling);
+  ouraImportPolling = setInterval(async () => {
+    polls++;
+    btn.innerHTML = "Polling " + polls + "/12<span class=\"spinner\"></span>";
+    try {
+      const s = await loadOuraForDates(dates);
+      OURA = s;
+      OURA_READY_DATE = VIEWING_DATE;
+      const cnt = Object.values(s).reduce((n, arr) => n + arr.length, 0);
+      render();
+      if (cnt > startCount) {
+        toast("Oura data updated");
+        cleanup();
+        return;
+      }
+    } catch (e) { console.error("[health-tracker] Oura poll error:", e); }
+    if (polls >= 12) { // ~2 min
+      toast("Oura import finished — no new data found (or still running)");
+      cleanup();
+    }
+  }, 10000);
+}
+
+// ---------- viewing-date navigation ----------
+async function navigateToDate(newDate) {
+  if (!newDate || newDate === VIEWING_DATE) return;
+  VIEWING_DATE = newDate;
+  document.getElementById("date-input").value = newDate;
+  // Reset state and render placeholder while loading
+  DATA = { food: [], exercise: [] };
+  WEEK_DATA = {};
+  OURA = {};
+  OURA_READY_DATE = null;
+  render();
+
+  const dates = pastNDates(VIEWING_DATE, 7);
+
+  try {
+    DATA = await loadFoodLog(VIEWING_DATE);
+  } catch (e) {
+    console.error("[health-tracker] Failed loading", VIEWING_DATE, e);
+  }
+  render();
+
+  loadOuraForDates(dates).then(s => {
+    OURA = s;
+    const cnt = Object.values(s).reduce((n, arr) => n + arr.length, 0);
+    DIAG.oura = cnt + " day(s) of Oura data across " + Object.keys(s).length + " days (window ending " + VIEWING_DATE + ")";
+    updateDiag();
+    OURA_READY_DATE = newDate;
+    render();
+  }).catch(e => {
+    console.error("[health-tracker] Oura load failed:", e);
+    OURA_READY_DATE = newDate;
+    render();
+  });
+
+  Promise.all(dates.slice(1).map(d => loadFoodLog(d).then(data => [d, data]).catch(_ => [d, { food: [], exercise: [] }])))
+    .then(results => {
+      WEEK_DATA = {};
+      results.forEach(p => { WEEK_DATA[p[0]] = p[1]; });
+      render();
+    }).catch(e => console.error("[health-tracker] Week food logs failed:", e));
+}
+
+// ---------- refresh the currently-viewed day on demand ----------
+// Re-reads today's food, symptoms, Oura activity, and the trailing week so the dashboard
+// reflects entries added in chat (or a newly synced Oura import) every time it's looked at.
+// Guarded so overlapping focus events don't pile up.
+let RELOADING = false;
+async function reloadView() {
+  if (RELOADING) return;
+  RELOADING = true;
+  try {
+    const dates = pastNDates(VIEWING_DATE, 7);
+    try { DATA = await loadFoodLog(VIEWING_DATE); } catch (e) {}
+    try { await loadSymptoms(); } catch (e) {}
+    render();
+    try { OURA = await loadOuraForDates(dates); } catch (e) {}
+    OURA_READY_DATE = VIEWING_DATE;
+    try {
+      const results = await Promise.all(dates.slice(1).map(d => loadFoodLog(d).then(data => [d, data]).catch(_ => [d, { food: [], exercise: [] }])));
+      WEEK_DATA = {};
+      results.forEach(p => { WEEK_DATA[p[0]] = p[1]; });
+    } catch (e) {}
+    render();
+  } finally {
+    RELOADING = false;
+  }
+}
+
+// ---------- init ----------
+async function init() {
+  await discoverBase();
+  await ensureDirs();
+  if (!BASE) toast("Couldn't find your Health Tracker folder — check the plugin's data folder (default ~/HealthTracker).", true);
+  loadSettings();
+  maybeShowOnboarding();
+  document.getElementById("date-input").value = VIEWING_DATE;
+  document.querySelectorAll("input[name=\"time\"]").forEach(i => i.value = nowHM());
+  document.getElementById("food-form").addEventListener("submit", handleFoodSubmit);
+  document.getElementById("ex-form").addEventListener("submit", handleExSubmit);
+  document.getElementById("sym-form").addEventListener("submit", handleSymptomSubmit);
+  document.getElementById("corr-btn").addEventListener("click", runCorrelation);
+  document.getElementById("set-save").addEventListener("click", saveSettings);
+  document.getElementById("oura-import-btn").addEventListener("click", triggerOuraImport);
+
+  // Symptom form date defaults to today (episodes are usually logged same-day)
+  const symDate = document.querySelector("#sym-form input[name=\"date\"]");
+  if (symDate) symDate.value = TODAY;
+
+  // Date navigation
+  document.getElementById("date-prev").addEventListener("click", () => navigateToDate(addDays(VIEWING_DATE, -1)));
+  document.getElementById("date-next").addEventListener("click", () => navigateToDate(addDays(VIEWING_DATE, 1)));
+  document.getElementById("date-today").addEventListener("click", () => navigateToDate(TODAY));
+  document.getElementById("date-input").addEventListener("change", (ev) => navigateToDate(ev.target.value));
+
+  // Compute date list (past 7 days)
+  const now = new Date();
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    dates.push(localDateStr(d));
+  }
+  console.log("[health-tracker] TODAY =", TODAY, "dates =", dates);
+
+  // Critical path: today's food log + the library + symptom log.
+  try {
+    const t0 = performance.now();
+    await Promise.all([
+      loadFoodLog(TODAY).then(d => { DATA = d; }),
+      loadLibrary().then(() => { console.log("[health-tracker] library loaded —", Object.keys(LIBRARY).length, "items"); }),
+      loadSymptoms().then(() => { console.log("[health-tracker] symptoms loaded —", SYMPTOMS.length, "episodes"); })
+    ]);
+    console.log("[health-tracker] loaded today + library in", Math.round(performance.now() - t0), "ms — entries:", DATA.food.length, "food,", DATA.exercise.length, "exercise");
+  } catch (e) {
+    console.error("[health-tracker] Failed loading today:", e);
+    toast("Couldn't load today's data: " + (e && e.message || e), true);
+  }
+  // Render immediately so today's intake shows even if Oura/week fail.
+  render();
+
+  // Background loads — don't block initial render.
+  loadOuraForDates(dates).then(s => {
+    OURA = s;
+    const cnt = Object.values(s).reduce((n, arr) => n + arr.length, 0);
+    const perDay = Object.entries(s).map(([d, arr]) => d + ":" + arr.length).join(" ");
+    DIAG.oura = cnt + " day(s) of Oura data across " + Object.keys(s).length + " days  [" + perDay + "]\n  list raw sample: " + (DIAG.ouraListRaw || "(none)");
+    updateDiag();
+    OURA_READY_DATE = VIEWING_DATE;
+    render();
+  }).catch(e => {
+    DIAG.oura = "ERROR: " + String(e && (e.message || e)) + "\n  list raw sample: " + (DIAG.ouraListRaw || "(none)");
+    updateDiag();
+    console.error("[health-tracker] Oura load failed:", e);
+    OURA_READY_DATE = VIEWING_DATE;
+    render();
+  });
+
+  Promise.all(dates.slice(1).map(d => loadFoodLog(d).then(data => [d, data]).catch(_ => [d, { food: [], exercise: [] }]))).then(results => {
+    WEEK_DATA = {};
+    let totalEntries = 0;
+    results.forEach(p => { WEEK_DATA[p[0]] = p[1]; totalEntries += p[1].food.length; });
+    DIAG.week = "loaded " + results.length + " prior days, " + totalEntries + " food entries total";
+    updateDiag();
+    render();
+  }).catch(e => {
+    DIAG.week = "ERROR: " + String(e && (e.message || e));
+    updateDiag();
+    console.error("[health-tracker] Week food logs failed:", e);
+  });
+}
+
+init().catch(err => {
+  console.error("[health-tracker] init crashed:", err);
+  toast("Load failed: " + (err && err.message || err), true);
+});
+
+// ---------- focus / visibility refresh ----------
+// When the dashboard window regains focus, update default times in entry forms,
+// re-prorate resting calories to the new "now", and (if the day rolled over) reload everything.
+async function refreshOnFocus() {
+  const newToday = localDateStr();
+  const t = nowHM();
+
+  // Bump the default time on any time input the user isn't currently editing
+  document.querySelectorAll("input[name='time']").forEach(i => {
+    if (document.activeElement !== i && !i.closest(".log-item.editing")) i.value = t;
+  });
+
+  if (newToday !== TODAY) {
+    const wasViewingToday = (VIEWING_DATE === TODAY);
+    console.log("[health-tracker] day rolled over:", TODAY, "→", newToday, "wasViewingToday:", wasViewingToday);
+    TODAY = newToday;
+    if (wasViewingToday) {
+      // User was on "today" — pivot to the new today and reload everything
+      await navigateToDate(newToday);
+    } else {
+      // User is browsing a past date — leave view alone, just re-render so the "Today" button works
+      render();
+    }
+  } else {
+    // Same day — reload today's food, symptoms, and Oura data so entries added in chat (or a newly
+    // synced Oura import) show up, then re-render (which also re-prorates resting to the current minute).
+    reloadView();
+  }
+}
+
+window.addEventListener("focus", refreshOnFocus);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshOnFocus(); });
+
+// Also tick once a minute while visible so resting calories creep up without needing focus changes
+setInterval(() => { if (!document.hidden) render(); }, 60 * 1000);
+</script>
+</body>
+</html>
