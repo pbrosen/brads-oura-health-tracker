@@ -1,5 +1,8 @@
 # Brad's Health Tracker — Oura build
 
+[![License](https://img.shields.io/github/license/pbrosen/brads-oura-health-tracker)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/pbrosen/brads-oura-health-tracker)](https://github.com/pbrosen/brads-oura-health-tracker/releases)
+
 A Cowork **plugin marketplace** + source repo for a Health Tracker system fed by an
 **Oura ring** instead of Strava: log food, exercise, and digestion (gut symptoms) to plain
 local Markdown files, with a visual dashboard and a nightly Oura sync.
